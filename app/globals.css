@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/**
+ * Кольори проєкту — як у `react`: семантичні токени в HSL (без `hsl()`),
+ * плюс розширені палітри для кнопок, станів, графіків.
+ * У Tailwind: `bg-background`, `text-primary`, `border-border`, `bg-metal-700` тощо.
+ */
+
+@layer base {
+  :root {
+    --radius: 0.625rem;
+
+    --background: 48 18% 96%;
+    --foreground: 222 45% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 45% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 45% 10%;
+    --primary: 174 84% 32%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 48 30% 98%;
+    --secondary-foreground: 222 40% 14%;
+    --muted: 220 14% 94%;
+    --muted-foreground: 220 9% 42%;
+    --accent: 172 35% 95%;
+    --accent-foreground: 174 75% 26%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 12% 88%;
+    --input: 40 12% 88%;
+    --ring: 174 84% 32%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    --turquoise-100: #d3f1ee;
+    --turquoise-300: #a9dfda;
+    --turquoise-500: #80cdc5;
+    --turquoise-600: #62a09a;
+    --turquoise-800: #2b4340;
+
+    --purple-200: #e6e4fb;
+    --purple-400: #978df9;
+    --purple-600: #5146b5;
+    --purple-900: #2a255e;
+
+    --red-100: #fde3e1;
+    --red-300: #ef5b50;
+    --red-500: #f04438;
+    --red-900: #3a2021;
+
+    --green-200: #e8f9ea;
+    --green-600: #15c132;
+    --green-900: #1a2b1f;
+
+    --yellow-100: #fdefe1;
+    --yellow-300: #fcbe51;
+    --yellow-500: #f29137;
+    --yellow-900: #3a2c21;
+
+    --metal-50: #f8f8f8;
+    --metal-100: #f5f5f5;
+    --metal-150: #dfe2e8;
+    --metal-200: #c8ced4;
+    --metal-300: #949599;
+    --metal-400: #777989;
+    --metal-500: #555558;
+    --metal-600: #3a3a3d;
+    --metal-700: #313134;
+    --metal-800: #313133;
+    --metal-900: #1a1a1d;
+
+    --transparent-gray: #777f8980;
+    --transparent-dark: #191b1c80;
+  }
+
+  .dark {
+    --background: 225 16% 7%;
+    --foreground: 218 16% 95%;
+    --card: 222 18% 11%;
+    --card-foreground: 218 16% 95%;
+    --popover: 222 18% 11%;
+    --popover-foreground: 218 16% 95%;
+    --primary: 172 66% 55%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 16% 15%;
+    --secondary-foreground: 218 16% 95%;
+    --muted: 222 14% 18%;
+    --muted-foreground: 218 11% 64%;
+    --accent: 222 14% 20%;
+    --accent-foreground: 218 16% 95%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 14% 18%;
+    --input: 222 14% 18%;
+    --ring: 172 66% 55%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100%;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  .page-mesh::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        1000px 520px at 12% -8%,
+        hsl(var(--primary) / 0.12),
+        transparent 58%
+      ),
+      radial-gradient(
+        780px 420px at 92% 0%,
+        hsl(258 55% 65% / 0.1),
+        transparent 52%
+      ),
+      hsl(var(--background));
+  }
+
+  ::selection {
+    background-color: hsl(var(--primary) / 0.18);
+    color: hsl(var(--foreground));
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-turquoise-100: var(--turquoise-100);
+  --color-turquoise-300: var(--turquoise-300);
+  --color-turquoise-500: var(--turquoise-500);
+  --color-turquoise-600: var(--turquoise-600);
+  --color-turquoise-800: var(--turquoise-800);
+
+  --color-purple-200: var(--purple-200);
+  --color-purple-400: var(--purple-400);
+  --color-purple-600: var(--purple-600);
+  --color-purple-900: var(--purple-900);
+
+  --color-red-100: var(--red-100);
+  --color-red-300: var(--red-300);
+  --color-red-500: var(--red-500);
+  --color-red-900: var(--red-900);
+
+  --color-green-200: var(--green-200);
+  --color-green-600: var(--green-600);
+  --color-green-900: var(--green-900);
+
+  --color-yellow-100: var(--yellow-100);
+  --color-yellow-300: var(--yellow-300);
+  --color-yellow-500: var(--yellow-500);
+  --color-yellow-900: var(--yellow-900);
+
+  --color-metal-50: var(--metal-50);
+  --color-metal-100: var(--metal-100);
+  --color-metal-150: var(--metal-150);
+  --color-metal-200: var(--metal-200);
+  --color-metal-300: var(--metal-300);
+  --color-metal-400: var(--metal-400);
+  --color-metal-500: var(--metal-500);
+  --color-metal-600: var(--metal-600);
+  --color-metal-700: var(--metal-700);
+  --color-metal-800: var(--metal-800);
+  --color-metal-900: var(--metal-900);
+
+  --color-transparent-gray: var(--transparent-gray);
+  --color-transparent-dark: var(--transparent-dark);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: 1rem;
+}
