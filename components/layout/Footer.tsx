@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 const footerLinks = [
-  { href: "/level-assessment", label: "Рівень" },
   { href: "/trainer", label: "Тренажер" },
   { href: "/learn", label: "Навчання" },
 ] as const;
@@ -17,7 +16,7 @@ export function Footer() {
             </p>
             <p className="text-sm leading-relaxed text-muted-foreground">
               Онлайн-тренажер з підтримкою AI-агента: гра з ботом, навчання та
-              оцінка рівня в одному інтерфейсі.
+              визначення рівня в межах єдиного інтерфейсу.
             </p>
           </div>
           <nav aria-label="Посилання в підвалі">

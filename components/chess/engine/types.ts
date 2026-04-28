@@ -22,6 +22,8 @@ export type SearchOptions = {
 export interface ChessEngine {
   init(): Promise<void>;
   isReady(): boolean;
+  /** Чи виконується зараз `go` (після `stop` стан зникає з появою `bestmove`). */
+  isBusy(): boolean;
   bestMove(opts: SearchOptions): Promise<EngineMove>;
   stop(): void;
   destroy(): void;

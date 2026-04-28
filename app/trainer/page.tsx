@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 
 export default function TrainerPage() {
   return (
-    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6 sm:py-16">
-      <div className="max-w-2xl">
+    <div className="mx-auto w-full max-w-6xl flex-1 py-8 sm:py-12 md:px-6 md:py-16 lg:px-8">
+      <div className="max-w-2xl px-4 md:px-0">
         <h1 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
           Тренажер
         </h1>

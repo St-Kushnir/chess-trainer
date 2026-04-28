@@ -50,6 +50,10 @@ export class StockfishEngine implements ChessEngine {
     return this.ready;
   }
 
+  isBusy(): boolean {
+    return this.busy;
+  }
+
   async bestMove(opts: SearchOptions): Promise<EngineMove> {
     if (!this.worker) throw new Error("Stockfish ще не ініціалізовано");
     if (this.busy) throw new Error("Stockfish зайнятий попереднім розрахунком");

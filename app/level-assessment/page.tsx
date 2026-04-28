@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Визначення рівня",
@@ -17,13 +18,18 @@ export default function LevelAssessmentPage() {
           aria-hidden
         />
         <p className="mt-6 text-base leading-relaxed text-muted-foreground">
-          Тут з&apos;явиться сценарій діагностики (тести, партії, питання) та
-          інтеграція з AI-агентом для підсумку й плану розвитку.
+          Цей сценарій перенесено в розділ навчання як окрему опцію.
         </p>
       </div>
       <div className="mt-10 max-w-2xl rounded-2xl border border-border/80 bg-card/90 p-8 text-sm leading-relaxed text-muted-foreground shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40">
-        Робоча область для діагностики — контент з&apos;явиться на наступних
-        ітераціях.
+        Перейди до{" "}
+        <Link
+          href="/learn#level-assessment"
+          className="font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          навчання → визначення рівня
+        </Link>
+        , щоб працювати з цією опцією в єдиному навчальному просторі.
       </div>
     </div>
   );

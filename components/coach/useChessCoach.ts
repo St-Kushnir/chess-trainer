@@ -87,7 +87,10 @@ export function useChessCoach(): UseChessCoachReturn {
         setStatus("done");
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setStatus("idle");
+        return;
+      }
       const message = err instanceof Error ? err.message : "Невідома помилка";
       setError(message);
       setStatus("error");

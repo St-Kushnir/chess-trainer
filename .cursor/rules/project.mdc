@@ -78,8 +78,9 @@ alwaysApply: true
 - `app/api/coach/route.ts` — Route Handler (`runtime: "nodejs"`, `dynamic: "force-dynamic"`). Валідує payload (fen, pgnHistory, playerColor, опційно level/lastMove/engineInfo/mode), стрімить `text/plain` через `ReadableStream`. Підтримує `GEMINI_API_KEY` / `GOOGLE_GENAI_API_KEY` / `GOOGLE_API_KEY`.
 
 ### Коуч-панель (`components/coach/`)
-- `useChessCoach.ts` — клієнтський хук стрімінгу: `text`, `status: "idle"|"streaming"|"done"|"error"`, `error`, `ask(input)`, `cancel()`, `reset()`. Використовує `AbortController`, скасовує попередній запит перед новим.
-- `CoachPanel.tsx` — **повністю презентаційний**. Props: `text`, `status`, `error`, `onAskComment`, `onAskHint`, `onCancel`, `onReset`, `canAskComment`, `canAskHint`. Дві кнопки: «Що зробити?» (primary) і «Коментар позиції / Оновити коментар» (secondary). Стрім із blink-курсором, повідомлення про помилку з кнопкою «скинути».
+- `useChessCoach.ts` — клієнтський хук стрімінгу: `text`, `status`, `ask` / `cancel` / `reset`.
+- `CoachPanel.tsx` — текст AI-тренера, інтерактивні SAN/клітинки з превʼю на дошці (`onPreviewSquare`, `onPreviewMove`), приховані мітки `(ти)`/`(суперник)` у UI.
+- Деталі превʼю, PV і реекспорту `index.ts`: **`.cursor/rules/coach-board-preview.mdc`**.
 
 ## Структура репозиторію
 

@@ -59,6 +59,10 @@ type ChessBoardProps = {
   showLegalMoves?: boolean;
   /** Стрілки-підказки від AI / бота */
   suggestionArrows?: Arrow[];
+  /** Тимчасові стрілки-превʼю з тексту тренера. */
+  previewArrows?: Arrow[];
+  /** Тимчасові підсвітки клітинок з тексту тренера. */
+  previewSquares?: Square[];
   /** Дозволити користувачу малювати стрілки правою кнопкою */
   allowUserArrows?: boolean;
   /** Перевизначення шляхів до mp3 (`move`, `mate`) */
@@ -86,6 +90,7 @@ type ChessBoardProps = {
 const HIGHLIGHT_COLORS = {
   selected: "rgba(45, 212, 191, 0.45)",
   lastMove: "rgba(245, 200, 66, 0.35)",
+  previewSquare: "rgba(45, 212, 191, 0.3)",
   legalDot:
     "radial-gradient(circle, rgba(15, 23, 42, 0.28) 22%, transparent 25%)",
   legalCapture:
@@ -151,6 +156,8 @@ export function ChessBoard({
   enableSound = true,
   showLegalMoves = true,
   suggestionArrows,
+  previewArrows,
+  previewSquares,
   allowUserArrows = true,
   soundUrls,
   playerColor = null,
@@ -211,8 +218,23 @@ export function ChessBoard({
         cursor: "pointer",
       };
     }
+    for (const square of previewSquares ?? []) {
+      styles[square] = {
+        ...(styles[square] ?? {}),
+        background: "rgba(45, 212, 191, 0.55)",
+        boxShadow: "inset 0 0 0 3px rgba(45, 212, 191, 0.95)",
+      };
+    }
     return styles;
-  }, [lastMove, activeLegalSquare, legalMoves]);
+  }, [lastMove, activeLegalSquare, legalMoves, previewSquares]);
+
+  const arrows = useMemo(() => {
+    const hints = suggestionArrows ?? [];
+    const previews = previewArrows ?? [];
+    if (hints.length === 0) return previews;
+    if (previews.length === 0) return hints;
+    return [...hints, ...previews];
+  }, [previewArrows, suggestionArrows]);
 
   const clearDragState = useCallback(() => {
     isDraggingRef.current = false;
@@ -429,13 +451,15 @@ export function ChessBoard({
   const orientation: PlayerColor = playerColor ?? "white";
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      {/* Стрічка над дошкою завжди рендериться з фіксованою висотою, щоб
-          поява/зникнення «Бот думає…» не зсувала дошку (CLS). */}
-      <div className="flex h-7 items-center justify-end gap-3">
+    <div className={className}>
+      {/*
+        «Бот думає» / «Нова партія» — поверх дошки (absolute), без окремої
+        смуги з фіксованою висотою, щоб не залишати порожній зазор на тренажері.
+      */}
+      <div className="relative overflow-hidden rounded-xl border border-border/80 bg-card shadow-md ring-1 ring-border/40 touch-none">
         {botThinking ? (
-          <span
-            className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground"
+          <div
+            className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-2 rounded-md border border-border/60 bg-card/95 px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm dark:bg-card/90"
             aria-live="polite"
           >
             <span className="relative inline-flex h-2 w-2">
@@ -443,29 +467,19 @@ export function ChessBoard({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
             </span>
             Бот думає…
-          </span>
+          </div>
         ) : null}
         {showNewGame ? (
-          <button
-            type="button"
-            onClick={handleNewGame}
-            className="rounded-lg border border-border/80 bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            Нова партія
-          </button>
+          <div className="absolute left-2 top-2 z-10">
+            <button
+              type="button"
+              onClick={handleNewGame}
+              className="rounded-lg border border-border/80 bg-secondary px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+            >
+              Нова партія
+            </button>
+          </div>
         ) : null}
-      </div>
-      {/*
-        ВАЖЛИВО про drag: НЕ обгортаємо <Chessboard /> у власні контейнери з
-        фіксованою/рахунковою шириною (`width: floor(...) px`, `aspectRatio`,
-        тощо). react-chessboard@5 використовує всередині dnd-kit, який кешує
-        getBoundingClientRect() для source-фігури і всіх drop-клітинок на
-        старті drag. Якщо наш wrapper хоч на пів-пікселя розходиться з тим, що
-        бібліотека рахує своїм layout, координати клітинок повзуть — і
-        фігура «висить над одною клітинкою, а підсвічується інша».
-        Тому залишаємо мінімум: лише декоративну рамку-карту + 100% width.
-      */}
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-md ring-1 ring-border/40 touch-none">
         <Chessboard
           options={{
             id: boardId,
@@ -477,7 +491,7 @@ export function ChessBoard({
             onSquareClick: handleSquareClick,
             onSquareRightClick: handleSquareRightClick,
             squareStyles,
-            arrows: suggestionArrows ?? [],
+            arrows,
             allowDrawingArrows: allowUserArrows,
             clearArrowsOnPositionChange: true,
             boardOrientation: orientation,

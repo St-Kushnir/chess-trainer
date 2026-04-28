@@ -147,6 +147,32 @@
   }
 }
 
+@keyframes coach-panel-indigo-shimmer {
+  0%,
+  100% {
+    border-color: rgb(99 102 241 / 0.55);
+    box-shadow: 0 0 0 1px rgb(99 102 241 / 0.12), 0 0 14px rgb(99 102 241 / 0.12);
+  }
+  50% {
+    border-color: rgb(129 140 248 / 0.95);
+    box-shadow: 0 0 0 1px rgb(165 180 252 / 0.35), 0 0 22px rgb(99 102 241 / 0.28);
+  }
+}
+
+@layer utilities {
+  .coach-panel-border-loading {
+    animation: coach-panel-indigo-shimmer 1.65s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .coach-panel-border-loading {
+      animation: none;
+      border-color: rgb(99 102 241 / 0.72);
+      box-shadow: 0 0 0 1px rgb(99 102 241 / 0.15);
+    }
+  }
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

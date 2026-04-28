@@ -1,0 +1,32 @@
+---
+description: AI-тренер — текст, превʼю на дошці, промпт, реекспорт coach/index
+globs:
+  - "**/components/coach/**/*.{ts,tsx}"
+  - "**/trainer-workspace.tsx"
+  - "**/lib/commentator/prompt.ts"
+alwaysApply: false
+---
+
+# AI-тренер і превʼю на дошці
+
+## Промпт (`lib/commentator/prompt.ts`)
+
+- Після кожної згадки **SAN** і **клітинки** модель додає **`(ти)`** або **`(суперник)`** — це маркери для логіки, не для людини в UI.
+- У `CoachPanel` мітки прибираються з відображення через `SIDE_TAG_DISPLAY_REGEX`; парсинг іде по **сирому** `text`.
+
+## `CoachPanel.tsx`
+
+- Експортується тип **`CoachSideTag`** (`"player" | "opponent" | null`).
+- Інтерактивні токени SAN/клітинки + `readSideTagAfterToken` → для ходів передається `sideTag` у **`onPreviewMove(san, sideTag)`**; для клітинок лишається **`onPreviewSquare(square, isOpponentContext)`**.
+
+## `components/coach/index.ts`
+
+- **`CoachPanel`** і **`CoachSideTag`** тільки з `./CoachPanel`.
+- **`useChessCoach`** і **`CoachStatus`** тільки з `./useChessCoach`.
+- Не реекспортувати `useChessCoach` двічі — ламає збірку (duplicate export).
+
+## `trainer-workspace.tsx`
+
+- Запамʼятовувати **`hintPvUci`** (PV Stockfish з того ж запиту, що й бірюзова стрілка-хінт); скидати разом із `hintArrows`.
+- Превʼю SAN: **`findVerboseSan`** з фільтром сторони за `(ти)`/`(суперник)`; уздовж варіанту — **`findSanAlongHintPv`** (імітація підказки + кроки UCI з PV), щоб ходи на кшталт **«після cxd4 твій Nxd4»** не плутались із ходом суперника на тій самій клітинці.
+- Жовта стрілка превʼю, якщо **`move.color`** ≠ колір гравця; без стрілки для свого ходу (бірюзова підказка лишається окремо).
