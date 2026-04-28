@@ -16,6 +16,8 @@ import {
   type PieceDropHandlerArgs,
   type PieceRenderObject,
 } from "react-chessboard";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CapturedPieceIcon } from "./CapturedPieceIcon";
 import type { ChessEngine, EngineMove } from "./engine";
 import { waitStockfishIdle } from "./engine";
 import { useChessSounds, type ChessSoundUrls } from "./useChessSounds";
@@ -159,6 +161,11 @@ function canActivatePiece(
   return true;
 }
 
+function moveNeedsPromotionChoice(game: Chess, from: Square, to: Square): boolean {
+  const opts = game.moves({ square: from, verbose: true });
+  return opts.some((m) => m.to === to && Boolean(m.promotion));
+}
+
 function deriveStatus(game: Chess, lastMove?: LastMoveInfo): StatusInfo {
   const turn = turnToColor(game.turn());
   const fen = game.fen();
@@ -216,6 +223,12 @@ export function ChessBoard({
     null,
   );
   const [botThinking, setBotThinking] = useState(false);
+  /** 0 … N: скільки SAN-ходів з поточної партії показати (N = повна позиція). */
+  const [viewMoveCount, setViewMoveCount] = useState(0);
+  const [promotionPick, setPromotionPick] = useState<{
+    from: Square;
+    to: Square;
+  } | null>(null);
   const playSound = useChessSounds(enableSound, soundUrls);
 
   const isPlayerTurn = useMemo(() => {
@@ -227,16 +240,50 @@ export function ChessBoard({
   const activeLegalSquare =
     dragSourceSquare ?? selectedSquare ?? hoverSquare;
 
+  const historySanList = useMemo(() => game.history(), [fen]); // eslint-disable-line react-hooks/exhaustive-deps -- `fen` updates when the stable `game` ref mutates
+
+  const historyFullLen = historySanList.length;
+  const isViewingPast = viewMoveCount < historyFullLen;
+
+  const boardFen = useMemo(() => {
+    if (viewMoveCount >= historyFullLen) return game.fen();
+    const g = new Chess();
+    for (let i = 0; i < viewMoveCount; i++) {
+      g.move(historySanList[i]!);
+    }
+    return g.fen();
+  }, [viewMoveCount, historyFullLen, historySanList, game]);
+
+  const positionChess = useMemo(() => new Chess(boardFen), [boardFen]);
+
+  const effectiveLastMove = useMemo(() => {
+    if (!isViewingPast) return lastMove;
+    if (viewMoveCount === 0) return null;
+    const g = new Chess();
+    for (let i = 0; i < viewMoveCount; i++) {
+      g.move(historySanList[i]!);
+    }
+    const v = g.history({ verbose: true });
+    const m = v[v.length - 1];
+    if (!m) return null;
+    return { from: m.from as Square, to: m.to as Square };
+  }, [isViewingPast, viewMoveCount, historySanList, lastMove]);
+
   const legalMoves = useMemo<Move[]>(() => {
+    if (isViewingPast) return [];
     if (!showLegalMoves || !activeLegalSquare) return [];
     return game.moves({ square: activeLegalSquare, verbose: true });
-  }, [game, fen, activeLegalSquare, showLegalMoves]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fen, activeLegalSquare, showLegalMoves, isViewingPast]); // eslint-disable-line react-hooks/exhaustive-deps -- `fen` updates when the stable `game` ref mutates
 
   const squareStyles = useMemo<Record<string, CSSProperties>>(() => {
     const styles: Record<string, CSSProperties> = {};
-    if (lastMove) {
-      styles[lastMove.from] = { background: HIGHLIGHT_COLORS.lastMove };
-      styles[lastMove.to] = { background: HIGHLIGHT_COLORS.lastMove };
+    if (effectiveLastMove) {
+      styles[effectiveLastMove.from] = {
+        background: HIGHLIGHT_COLORS.lastMove,
+      };
+      styles[effectiveLastMove.to] = {
+        background: HIGHLIGHT_COLORS.lastMove,
+      };
     }
     if (activeLegalSquare) {
       styles[activeLegalSquare] = {
@@ -261,8 +308,8 @@ export function ChessBoard({
         boxShadow: "inset 0 0 0 3px rgba(45, 212, 191, 0.95)",
       };
     }
-    if (game.inCheck() && !game.isCheckmate()) {
-      const sq = kingSquareForColor(game, game.turn());
+    if (positionChess.inCheck() && !positionChess.isCheckmate()) {
+      const sq = kingSquareForColor(positionChess, positionChess.turn());
       if (sq) {
         styles[sq] = {
           ...(styles[sq] ?? {}),
@@ -271,18 +318,25 @@ export function ChessBoard({
       }
     }
     return styles;
-  }, [lastMove, activeLegalSquare, legalMoves, previewSquares, fen, game]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    effectiveLastMove,
+    activeLegalSquare,
+    legalMoves,
+    previewSquares,
+    positionChess,
+  ]);
 
   const pieces = useMemo((): PieceRenderObject => {
-    if (game.isStalemate()) {
+    const g = positionChess;
+    if (g.isStalemate()) {
       return {
         ...defaultPieces,
         wK: (props) => defaultPieces.wK({ ...props, fill: KING_STALEMATE_FILL }),
         bK: (props) => defaultPieces.bK({ ...props, fill: KING_STALEMATE_FILL }),
       };
     }
-    if (game.isCheckmate()) {
-      const mated = game.turn();
+    if (g.isCheckmate()) {
+      const mated = g.turn();
       if (mated === "w") {
         return {
           ...defaultPieces,
@@ -295,7 +349,7 @@ export function ChessBoard({
       };
     }
     return defaultPieces;
-  }, [fen, game]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [positionChess]);
 
   const arrows = useMemo(() => {
     const hints = suggestionArrows ?? [];
@@ -359,6 +413,7 @@ export function ChessBoard({
             color: turnToColor(move.color),
           }),
         );
+        setViewMoveCount(game.history().length);
         return true;
       } catch {
         return false;
@@ -371,21 +426,38 @@ export function ChessBoard({
     ({ sourceSquare, targetSquare }: PieceDropHandlerArgs) => {
       clearDragState();
       if (!targetSquare) return false;
+      if (isViewingPast) return false;
+      if (promotionPick) return false;
       if (playerColor && !isPlayerTurn) return false;
-      return applyMove(sourceSquare as Square, targetSquare as Square);
+      const from = sourceSquare as Square;
+      const to = targetSquare as Square;
+      if (moveNeedsPromotionChoice(game, from, to)) {
+        setPromotionPick({ from, to });
+        return false;
+      }
+      return applyMove(from, to);
     },
-    [applyMove, clearDragState, isPlayerTurn, playerColor],
+    [
+      applyMove,
+      clearDragState,
+      game,
+      isPlayerTurn,
+      isViewingPast,
+      playerColor,
+      promotionPick,
+    ],
   );
 
   const handleMouseOverSquare = useCallback(
     ({ piece, square }: { piece: { pieceType: string } | null; square: string }) => {
+      if (isViewingPast) return;
       if (isDraggingRef.current) return;
       if (playerColor && !isPlayerTurn) return;
       const sq = square as Square;
       if (!canActivatePiece(game, piece, playerColor, isPlayerTurn)) return;
       setHoverSquare(sq);
     },
-    [game, isPlayerTurn, playerColor],
+    [game, isPlayerTurn, playerColor, isViewingPast],
   );
 
   const handleMouseOutSquare = useCallback(
@@ -407,6 +479,7 @@ export function ChessBoard({
       piece: { pieceType: string };
       square: string | null;
     }) => {
+      if (isViewingPast) return;
       if (isSparePiece || !square) return;
       if (playerColor && !isPlayerTurn) return;
       if (!canActivatePiece(game, piece, playerColor, isPlayerTurn)) return;
@@ -414,7 +487,7 @@ export function ChessBoard({
       isDraggingRef.current = true;
       setDragSourceSquare(square as Square);
     },
-    [game, isPlayerTurn, playerColor],
+    [game, isPlayerTurn, playerColor, isViewingPast],
   );
 
   const handleSquareClick = useCallback(
@@ -425,10 +498,23 @@ export function ChessBoard({
       piece: { pieceType: string } | null;
       square: string;
     }) => {
+      if (promotionPick) {
+        setPromotionPick(null);
+        setSelectedSquare(null);
+        setHoverSquare(null);
+        return;
+      }
+      if (isViewingPast) return;
       if (playerColor && !isPlayerTurn) return;
       const sq = square as Square;
 
       if (selectedSquare && selectedSquare !== sq) {
+        if (moveNeedsPromotionChoice(game, selectedSquare, sq)) {
+          setPromotionPick({ from: selectedSquare, to: sq });
+          setSelectedSquare(null);
+          setHoverSquare(null);
+          return;
+        }
         const moved = applyMove(selectedSquare, sq);
         if (moved) return;
       }
@@ -439,7 +525,15 @@ export function ChessBoard({
       }
       setSelectedSquare(null);
     },
-    [applyMove, game, isPlayerTurn, playerColor, selectedSquare],
+    [
+      applyMove,
+      game,
+      isPlayerTurn,
+      isViewingPast,
+      playerColor,
+      promotionPick,
+      selectedSquare,
+    ],
   );
 
   const handleSquareRightClick = useCallback(() => {
@@ -456,11 +550,14 @@ export function ChessBoard({
     setHoverSquare(null);
     clearDragState();
     setBotThinking(false);
+    setViewMoveCount(0);
+    setPromotionPick(null);
     onStatusChange?.(deriveStatus(game));
   }, [clearDragState, game, opponent, onStatusChange]);
 
   useEffect(() => {
     if (!opponent || !playerColor) return;
+    if (isViewingPast) return;
     if (game.isGameOver()) return;
     if (isPlayerTurn) return;
 
@@ -527,6 +624,7 @@ export function ChessBoard({
     applyMove,
     onEngineMove,
     game,
+    isViewingPast,
   ]);
 
   const orientation: PlayerColor = playerColor ?? "white";
@@ -538,6 +636,49 @@ export function ChessBoard({
         смуги з фіксованою висотою, щоб не залишати порожній зазор на тренажері.
       */}
       <div className="relative overflow-hidden rounded-xl border border-border/80 bg-card shadow-md ring-1 ring-border/40 touch-none">
+        {promotionPick ? (
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/45 px-4 py-6 backdrop-blur-[2px]"
+            role="dialog"
+            aria-modal
+            aria-labelledby="promotion-dialog-title"
+          >
+            <p
+              id="promotion-dialog-title"
+              className="text-center text-sm font-semibold text-white"
+            >
+              На що перетворити пішака?
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+              {(["q", "r", "b", "n"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/25 bg-card/95 shadow-md ring-1 ring-border/40 transition hover:bg-muted sm:h-16 sm:w-16"
+                  onClick={() => {
+                    if (!promotionPick) return;
+                    const { from, to } = promotionPick;
+                    setPromotionPick(null);
+                    void applyMove(from, to, p);
+                  }}
+                >
+                  <CapturedPieceIcon
+                    pieceType={p}
+                    color={game.turn()}
+                    className="h-11 w-11 sm:h-12 sm:w-12"
+                  />
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="text-xs font-medium text-white/85 underline-offset-2 hover:underline"
+              onClick={() => setPromotionPick(null)}
+            >
+              Скасувати
+            </button>
+          </div>
+        ) : null}
         {botThinking ? (
           <div
             className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-2 rounded-md border border-border/60 bg-card/95 px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm backdrop-blur-sm dark:bg-card/90"
@@ -565,7 +706,7 @@ export function ChessBoard({
           options={{
             id: boardId,
             pieces,
-            position: fen,
+            position: boardFen,
             onPieceDrop: handlePieceDrop,
             onPieceDrag: handlePieceDrag,
             onMouseOverSquare: handleMouseOverSquare,
@@ -577,7 +718,8 @@ export function ChessBoard({
             allowDrawingArrows: allowUserArrows,
             clearArrowsOnPositionChange: true,
             boardOrientation: orientation,
-            allowDragging: !playerColor || isPlayerTurn,
+            allowDragging:
+              !isViewingPast && (!playerColor || isPlayerTurn) && !promotionPick,
             showNotation: true,
             lightSquareStyle: { backgroundColor: "var(--metal-100)" },
             darkSquareStyle: { backgroundColor: "var(--turquoise-600)" },
@@ -596,6 +738,32 @@ export function ChessBoard({
             boardStyle: { width: "100%", maxWidth: "100%" },
           }}
         />
+      </div>
+      <div className="mx-auto mt-3 flex w-full max-w-[min(100%,560px)] items-stretch justify-between gap-3 px-1">
+        <button
+          type="button"
+          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Попередній хід"
+          title="Попередній хід"
+          disabled={viewMoveCount <= 0}
+          onClick={() =>
+            setViewMoveCount((c) => Math.max(0, c - 1))
+          }
+        >
+          <ChevronLeft className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" strokeWidth={2.25} />
+        </button>
+        <button
+          type="button"
+          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35"
+          aria-label="Наступний хід"
+          title="Наступний хід"
+          disabled={viewMoveCount >= historyFullLen}
+          onClick={() =>
+            setViewMoveCount((c) => Math.min(historyFullLen, c + 1))
+          }
+        >
+          <ChevronRight className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" strokeWidth={2.25} />
+        </button>
       </div>
     </div>
   );

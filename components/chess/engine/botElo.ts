@@ -27,14 +27,17 @@ type Anchor = { elo: number; skill: number; depth: number; movetimeMs: number };
 
 /**
  * Якорі для інтерполяції skill / depth / movetime.
- * Для ELO < 1320 глибина в грі не використовується — сила задається коротшим
- * `movetime` + низьким Skill; NNUE без цього залишається «лютим» навіть на 200.
+ * Для ELO < 1320 глибина в грі не використовується — сила задається `movetime` + Skill.
+ * Діапазон 200–1200 раніше був занадто «різаний» по часу (дивні, нелогічні ходи);
+ * додаткові якорі 600/1000 і довші movetime до ~1200 дають стабільніші рішення.
  */
 const ANCHORS: readonly Anchor[] = [
-  { elo: 200, skill: 0, depth: 1, movetimeMs: 22 },
-  { elo: 400, skill: 0, depth: 2, movetimeMs: 38 },
-  { elo: 800, skill: 1, depth: 3, movetimeMs: 80 },
-  { elo: 1200, skill: 3, depth: 6, movetimeMs: 170 },
+  { elo: 200, skill: 0, depth: 1, movetimeMs: 34 },
+  { elo: 400, skill: 0, depth: 2, movetimeMs: 52 },
+  { elo: 600, skill: 0, depth: 2, movetimeMs: 68 },
+  { elo: 800, skill: 1, depth: 3, movetimeMs: 95 },
+  { elo: 1000, skill: 2, depth: 4, movetimeMs: 130 },
+  { elo: 1200, skill: 3, depth: 6, movetimeMs: 195 },
   { elo: 1600, skill: 10, depth: 11, movetimeMs: 700 },
   { elo: 2000, skill: 15, depth: 14, movetimeMs: 1100 },
   { elo: 2400, skill: 20, depth: 18, movetimeMs: 1800 },

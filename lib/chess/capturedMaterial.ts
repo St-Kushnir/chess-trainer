@@ -1,4 +1,4 @@
-import { Chess, type Color, type PieceSymbol } from "chess.js";
+import { Chess, type PieceSymbol } from "chess.js";
 
 export type CapturePlayerColor = "white" | "black";
 
@@ -79,18 +79,3 @@ export function playerMaterialAdvantage(
   return black - white;
 }
 
-const GLYPH_OFFSET: Record<PieceSymbol, number> = {
-  k: 0,
-  q: 1,
-  r: 2,
-  b: 3,
-  n: 4,
-  p: 5,
-};
-
-/** Unicode-фігура в оригінальному кольорі (для взятих). */
-export function pieceGlyph(pieceType: PieceSymbol, color: Color): string {
-  if (pieceType === "k") return "";
-  const base = color === "w" ? 0x2654 : 0x265a;
-  return String.fromCodePoint(base + GLYPH_OFFSET[pieceType]);
-}

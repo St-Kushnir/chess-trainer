@@ -924,11 +924,10 @@ export function TrainerWorkspace() {
   );
 
   return (
-    <div className="mt-6 grid gap-4 md:mt-10 md:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] lg:items-start">
-      <div className="space-y-2 md:space-y-6">
-        {/* Mobile: тренер над дошкою; якість ходів одразу під тренером. */}
-        <div className="space-y-2 px-1 md:px-0 lg:hidden">
-          {coachPanel}
+    <div className="mt-6 grid min-w-0 gap-4 md:mt-10 md:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] lg:items-start">
+      <div className="min-w-0 space-y-2 md:space-y-6">
+        {/* Mobile: якість ходів над тренером; дошка нижче. */}
+        <div className="space-y-2 px-1 min-w-0 md:px-0 lg:hidden">
           <MoveQualityPanel
             lastPlayer={lastPlayerAnalysis}
             lastBot={lastBotAnalysis}
@@ -938,6 +937,7 @@ export function TrainerWorkspace() {
             onExpandedChange={setIsMoveQualityOpen}
             instanceId="mq-mobile"
           />
+          {coachPanel}
         </div>
 
         <CapturedPiecesHud
@@ -985,7 +985,16 @@ export function TrainerWorkspace() {
 
       <aside className="space-y-6 px-1 md:px-0">
         <section className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40">
-          <header className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+          <header
+            className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-2 ${
+              !isPartyPanelOpen
+                ? "cursor-pointer rounded-lg outline-offset-2 hover:bg-muted/40"
+                : ""
+            }`}
+            onClick={() => {
+              if (!isPartyPanelOpen) setIsPartyPanelOpen(true);
+            }}
+          >
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <p className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
                 Партія
@@ -999,7 +1008,10 @@ export function TrainerWorkspace() {
                 </span>
               ) : null}
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div
+              className="flex shrink-0 items-center gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
               <button
                 type="button"
                 onClick={handleNewGame}

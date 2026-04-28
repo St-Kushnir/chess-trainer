@@ -202,7 +202,7 @@ export function CoachPanel({
 
   return (
     <section
-      className={`relative rounded-2xl bg-card/90 p-4 sm:p-5 shadow-sm dark:bg-card/70 ${sectionBorderClass} ${className}`}
+      className={`relative min-w-0 max-w-full rounded-2xl bg-card/90 p-4 sm:p-5 shadow-sm dark:bg-card/70 ${sectionBorderClass} ${className}`}
       aria-label="AI-тренер"
       aria-busy={isStreaming}
     >
@@ -236,9 +236,9 @@ export function CoachPanel({
         неї прокручується, щоб дошка під карткою не стрибала.
       */}
       {enabled ? (
-        <div className="mt-4 max-md:flex max-md:min-h-[min(18dvh,5.75rem)] max-md:max-h-[min(18dvh,5.75rem)] max-md:flex-col md:block">
+        <div className="mt-4 min-w-0 w-full max-md:flex max-md:min-h-[min(16dvh,5rem)] max-md:max-h-[min(16dvh,5rem)] max-md:flex-col md:block">
           <div
-            className="relative max-md:min-h-0 max-md:flex-1 max-md:text-[0.8125rem] max-md:leading-snug md:min-h-11 md:max-h-[min(75vh,24rem)] md:text-sm md:leading-relaxed overflow-y-auto pr-1 text-foreground/90"
+            className="relative min-h-0 min-w-0 max-w-full max-md:flex-1 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pr-1 max-md:leading-snug max-md:[font-size:clamp(0.62rem,calc(0.52rem+1.35vmin),0.8125rem)] md:min-h-11 md:max-h-[min(75vh,24rem)] md:overflow-y-auto md:pr-1 md:text-sm md:leading-relaxed text-foreground/90"
             onMouseLeave={onClearPreview}
           >
               {showIdleHint ? (
@@ -262,7 +262,7 @@ export function CoachPanel({
 
               {text ? (
                 <div
-                  className="sm:space-y-1 whitespace-pre-wrap"
+                  className="min-w-0 max-w-full break-words sm:space-y-1 whitespace-pre-wrap"
                   aria-live="polite"
                   aria-busy={isStreaming}
                 >
@@ -271,7 +271,7 @@ export function CoachPanel({
                       <button
                         key={`${chunk.value}-${index}`}
                         type="button"
-                        className="inline rounded px-0.5 text-primary underline decoration-primary/40 underline-offset-2 transition-colors hover:bg-primary/10 hover:decoration-primary"
+                        className="inline-block max-w-full whitespace-normal rounded px-0.5 text-left align-baseline text-primary underline decoration-primary/40 underline-offset-2 transition-colors break-words hover:bg-primary/10 hover:decoration-primary"
                         onMouseEnter={() =>
                           previewToken(
                             chunk.value,

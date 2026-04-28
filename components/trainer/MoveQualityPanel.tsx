@@ -209,7 +209,14 @@ export function MoveQualityPanel({
       className="rounded-2xl border border-border/80 bg-card/90 p-5 shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40"
       aria-label="Якість ходів"
     >
-      <header className="flex items-start justify-between gap-2">
+      <header
+        className={`flex items-start justify-between gap-2 ${
+          !expanded ? "cursor-pointer rounded-lg outline-offset-2 hover:bg-muted/40" : ""
+        }`}
+        onClick={() => {
+          if (!expanded) onExpandedChange(true);
+        }}
+      >
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold tracking-tight text-foreground">
             Якість ходів за Stockfish
@@ -220,11 +227,14 @@ export function MoveQualityPanel({
               <span className={`font-mono font-semibold tabular-nums ${balanceColor}`}>
                 {balanceStr}
               </span>{" "}
-              сп — натисни стрілку для деталей.
+              сп — натисни, щоб розгорнути.
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div
+          className="flex shrink-0 items-center gap-1.5"
+          onClick={(e) => e.stopPropagation()}
+        >
           <span
             className={`min-w-13 text-right text-[11px] tabular-nums text-muted-foreground ${
               loading ? "visible" : "invisible"

@@ -4,10 +4,10 @@ import { useMemo, type ReactNode } from "react";
 import type { PlayerColor } from "@/components/chess";
 import {
   capturesForPlayer,
-  pieceGlyph,
   playerMaterialAdvantage,
   sortCapturedTypes,
 } from "@/lib/chess/capturedMaterial";
+import { CapturedPieceIcon } from "@/components/chess/CapturedPieceIcon";
 
 type CapturedPiecesHudProps = {
   fen: string;
@@ -71,7 +71,7 @@ export function CapturedPiecesHud({
       >
         <span className="sr-only">{aria}</span>
         <div
-          className="-space-x-1.5 flex min-w-0 shrink items-center text-[1.35rem] leading-none sm:text-[1.55rem]"
+          className="-space-x-1 flex min-w-0 shrink items-center leading-none"
           aria-hidden
         >
           {pieces.length === 0 ? (
@@ -80,9 +80,9 @@ export function CapturedPiecesHud({
             pieces.map((pt, i) => (
               <span
                 key={`${keyPrefix}-${i}-${pt}`}
-                className="inline-block select-none drop-shadow-sm"
+                className="inline-flex select-none drop-shadow-sm"
               >
-                {pieceGlyph(pt, pieceColor)}
+                <CapturedPieceIcon pieceType={pt} color={pieceColor} />
               </span>
             ))
           )}
