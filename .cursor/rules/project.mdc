@@ -1,5 +1,5 @@
 ---
-description: Головний контекст Chess Trainer — критичні обмеження та структура проєкту
+description: Головний контекст Chess Trainer — критичні обмеження, поточний стан і структура проєкту
 alwaysApply: true
 ---
 
@@ -17,17 +17,111 @@ alwaysApply: true
 
 ## Про проєкт
 
-**Chess Trainer** — шаховий онлайн-тренажер з орієнтацією на **пряму підтримку AI-агента** (оцінка рівня, гра з ботом, навчальні сценарії). Стек: **Next.js 16** (App Router), **React 19**, **TypeScript**, **Tailwind CSS v4** (`@import "tailwindcss"` + `@theme` у CSS), **next-themes** (світла / темна тема, `class` на `<html>`).
+**Chess Trainer** — шаховий онлайн-тренажер з орієнтацією на **пряму підтримку AI-агента** (оцінка рівня, гра з ботом, навчальні сценарії).
 
-## Структура репозиторію (орієнтир)
+**Стек:**
 
-- `app/` — маршрути App Router: `layout.tsx`, `page.tsx`, `globals.css`; сторінки `level-assessment`, `trainer`, `learn`.
-- `components/layout/` — спільний **Header** і **Footer** (підключені в кореневому layout).
-- `components/theme/` — **ThemeProvider**, **ThemeToggle**.
-- `public/` — статика (наприклад `logo.png`).
-- Кольори та дизайн-токени: **`app/globals.css`** — семантичні змінні (HSL, як у сусідньому проєкті `react`) + `@theme inline` для класів Tailwind (`bg-background`, `text-primary`, `bg-card`, `text-muted-foreground`, палітри `metal-*`, `turquoise-*` тощо).
+- **Next.js 16.2** (App Router, React Compiler увімкнено через `babel-plugin-react-compiler`).
+- **React 19.2**, **TypeScript 5**.
+- **Tailwind CSS v4** через `@import "tailwindcss"` + `@custom-variant dark` + `@theme inline` у `app/globals.css` (без `tailwind.config.js`). PostCSS-плагін `@tailwindcss/postcss`.
+- **next-themes** для перемикання світла/темна теми (`class` на `<html>`).
+- **chess.js** — шахова логіка, валідація, FEN/SAN.
+- **react-chessboard ^5.10** — інтерактивна дошка (drag, click, стрілки, кастом-стилі клітинок).
+- **stockfish ^18** (lite-single WASM) — рушій у Web Worker через UCI.
+- **@google/genai** — LLM-коментатор Gemini (`gemini-2.5-flash` за замовчуванням).
 
-## Додатковий контекст для агентів
+## Поточний стан (що вже реалізовано і працює)
 
-- У корені можуть бути `AGENTS.md`, `CLAUDE.md` — короткі вказівки для інструментів/агентів; правила з **`.cursor/rules/`** мають пріоритет для обмежень і контексту в Cursor.
-- Нові зосереджені правила (окремі задачі, домени) варто додавати окремими `.mdc` у `.cursor/rules/` з `globs` або `alwaysApply` за потреби.
+### Загальний layout та теми
+- Кореневий `app/layout.tsx`: шрифти Geist Sans/Mono, `lang="uk"`, `suppressHydrationWarning`, `page-mesh` фонова сітка з градієнтом, `Header` + `<main>` + `Footer`, обгорнуті в `ThemeProvider`.
+- `Header` показує лого PNG (`/logo.png`), приховує «Головна» на маленьких екранах, має `ThemeToggle` (sun/moon SVG, `queueMicrotask` для уникнення sync-setState у ефекті).
+- Дизайн-система кольорів — у `app/globals.css`: семантичні HSL-токени (`--background`, `--foreground`, `--primary`, `--muted`, `--card`, `--accent`, `--destructive`, `--border`, `--ring`) + розширені палітри (`--turquoise-*`, `--purple-*`, `--red-*`, `--green-*`, `--yellow-*`, `--metal-*`), доступні як Tailwind-класи через `@theme inline`.
+
+### Сторінки
+- `/` — лендінг із трьома картками-секціями (`level-assessment`, `trainer`, `learn`), сучасний glassmorphism-стиль з hover-ефектами.
+- `/level-assessment`, `/learn` — плейсхолдери з єдиним стилем дизайн-системи.
+- `/trainer` — рендерить клієнтський `TrainerWorkspace`.
+
+### Тренажер (`app/trainer/trainer-workspace.tsx`)
+Центральний оркестратор. Містить:
+- Вибір сторони гравця (білі/чорні) — змінює орієнтацію дошки і хто починає.
+- Вибір рівня бота з 5 пресетів (`ENGINE_LEVELS`: Новачок 800 → Майстер 2400+).
+- Кнопку «Нова партія» (форсує remount `ChessBoard` через `key={boardKey}`).
+- Стейт `statusInfo` (від `ChessBoard.onStatusChange`), `lastEngineMove` (від `onEngineMove`).
+- Підняте керування коучем через `useChessCoach()`.
+- **Кнопка «Що зробити?»** (хінт-флоу): просить Stockfish найкращий хід (skill 20, movetime 1500ms), малює бірюзову стрілку на дошці, стрімить коротке пояснення від Gemini у режимі `hint`. Стрілка прибирається після ходу гравця або нової партії.
+- **Кнопка «Коментар позиції»** (`comment` режим): структурована порада з 4 блоків.
+
+### Шахова дошка (`components/chess/ChessBoard.tsx`)
+- Контрольована через `chess.js` + `react-chessboard`.
+- `onPieceDrop`, `onSquareClick`, `onSquareRightClick`.
+- Підсвітка: вибрана клітинка, останній хід (жовтий), легальні ходи (точка для пустої клітинки, кільце для взяття).
+- Власні стилі клітинок: `--metal-100` (світлі) / `--turquoise-600` (темні).
+- Стрілки: зовнішні через `suggestionArrows` (для AI-хінта і потенційно інших підказок) + користувацькі через ПКМ (бірюзова/синя/червона за `arrowOptions`).
+- Звуки в `useChessSounds`: пробує `/sounds/move.mp3` і `/sounds/final-move.mp3`, із fallback на синтез через Web Audio API (move, capture, castle, check, mate, gameEnd).
+- Бот-черга: `useEffect` на зміну FEN — якщо не черга гравця, викликає `opponent.bestMove(...)` із поточним пресетом, застосовує хід, повідомляє через `onEngineMove`. `setBotThinking(true)` загорнуто в `queueMicrotask`. Cleanup викликає `opponent.stop()`.
+- Орієнтація дошки і `allowDragging` залежать від `playerColor` та черги.
+
+### Шаховий рушій (`components/chess/engine/`)
+- `types.ts` — `ChessEngine`, `EngineMove`, `SearchOptions`, `EngineLevel`, `ENGINE_LEVELS` (5 пресетів із `skill` 0–20, `depth`, `movetimeMs`).
+- `StockfishEngine.ts` — Web Worker-обгортка над `public/stockfish/stockfish.js` (lite-single ≈ 7МБ). UCI-протокол: `uci`/`uciok` → `ucinewgame` → `isready`/`readyok` → `setoption Skill Level` → `position fen` → `go movetime|depth`. Парсить `info` (cp, mate, pv) та `bestmove`. Має guard `busy`, `stop()`, `destroy()`.
+- `useStockfishEngine.ts` — React-хук: створює один інстанс на життєвий цикл компонента, через `useState` (а не `useRef`, щоб уникнути ESLint-варнінгу про доступ до refs під час рендеру), termінує Worker на unmount.
+
+### AI-тренер (`lib/commentator/` + `app/api/coach/`)
+- `lib/commentator/types.ts`: `CommentInput` (fen, pgnHistory, playerColor, level, lastMove, engineInfo, audience, **`mode: "comment" | "hint"`**), `ChessCommentator`, `CommentEngineInfo`, `CommentLevel`, `CommentMode`.
+- `lib/commentator/prompt.ts`: `SYSTEM_PROMPT` + `buildPrompt(input)`. Жорстко тримає 2-у особу, українську, SAN (не UCI), без markdown-таблиць/H1-H2.
+  - **`comment` режим:** 4 блоки (`**Що сталося**`, `**Позиція**`, `**Твій план**`, `**Грай зараз**`), 90–160 слів.
+  - **`hint` режим:** одна стисла відповідь у форматі `**Грай: <SAN>**` + 2–3 речення, без блоків і списків.
+  - `formatScoreForPlayer` перевертає знак Stockfish-оцінки під сторону гравця і дає словесне трактування.
+  - `pvToSan(fen, pv, startIndex)` розкладає UCI-PV у SAN; `startIndex` обирається з умови `engineInfo.color === sideToMove(fen)`: у режимі коментаря пропускає `pv[0]` (вже на дошці), у режимі хінта — бере з 0 (рекомендація).
+- `lib/commentator/GeminiCommentator.ts` — реалізація `ChessCommentator` через `@google/genai`, потокова генерація (`generateContentStream`).
+- `app/api/coach/route.ts` — Route Handler (`runtime: "nodejs"`, `dynamic: "force-dynamic"`). Валідує payload (fen, pgnHistory, playerColor, опційно level/lastMove/engineInfo/mode), стрімить `text/plain` через `ReadableStream`. Підтримує `GEMINI_API_KEY` / `GOOGLE_GENAI_API_KEY` / `GOOGLE_API_KEY`.
+
+### Коуч-панель (`components/coach/`)
+- `useChessCoach.ts` — клієнтський хук стрімінгу: `text`, `status: "idle"|"streaming"|"done"|"error"`, `error`, `ask(input)`, `cancel()`, `reset()`. Використовує `AbortController`, скасовує попередній запит перед новим.
+- `CoachPanel.tsx` — **повністю презентаційний**. Props: `text`, `status`, `error`, `onAskComment`, `onAskHint`, `onCancel`, `onReset`, `canAskComment`, `canAskHint`. Дві кнопки: «Що зробити?» (primary) і «Коментар позиції / Оновити коментар» (secondary). Стрім із blink-курсором, повідомлення про помилку з кнопкою «скинути».
+
+## Структура репозиторію
+
+- `app/` — App Router: `layout.tsx`, `page.tsx`, `globals.css`; сторінки `level-assessment/`, `trainer/` (`page.tsx` + клієнтський `trainer-workspace.tsx`), `learn/`.
+- `app/api/coach/route.ts` — стрім коментаря тренера.
+- `components/layout/` — `Header`, `Footer`, `index.ts`.
+- `components/theme/` — `ThemeProvider`, `ThemeToggle`, `index.ts`.
+- `components/chess/` — `ChessBoard.tsx`, `useChessSounds.ts`, `index.ts` (реекспортує типи `GameStatus`, `PlayerColor`, `StatusInfo`, `EngineMoveInfo`, `LastMoveInfo`).
+- `components/chess/engine/` — `types.ts`, `StockfishEngine.ts`, `useStockfishEngine.ts`, `index.ts`.
+- `components/coach/` — `CoachPanel.tsx`, `useChessCoach.ts`, `index.ts`.
+- `lib/commentator/` — серверна логіка LLM (тільки на сервері: ключі не потрапляють у браузер).
+- `public/` — `logo.png`, `sounds/move.mp3`, `sounds/final-move.mp3`, **`stockfish/`** (генерується скриптом, **не комітиться**).
+- `scripts/setup-engine.mjs` — копіює `stockfish-18-lite-single.{js,wasm}` із `node_modules/stockfish/bin/` у `public/stockfish/{stockfish.js,stockfish.wasm}`. Запускається як `postinstall` і вручну через `npm run setup:engine`.
+- `eslint.config.mjs` — Next.js базова конфігурація + `globalIgnores(["public/**"])` (щоб не лінтити Stockfish-WASM-loader).
+- `.cursor/rules/project.mdc` — цей файл.
+
+## Команди npm
+
+- `npm run dev` — Next.js dev-server.
+- `npm run build` / `npm run start` — production.
+- `npm run lint` — ESLint.
+- `npm run setup:engine` — копіює Stockfish у `public/stockfish/` (запускається автоматично після `npm install` через `postinstall`).
+
+## Змінні середовища
+
+- `GEMINI_API_KEY` (обов'язково для AI-тренера) — ключ Google AI Studio (отримати на https://aistudio.google.com/apikey, безкоштовний тариф достатній для розробки). Прийнятні також `GOOGLE_GENAI_API_KEY` / `GOOGLE_API_KEY`.
+- Опційно `GEMINI_MODEL` (за замовчуванням `gemini-2.5-flash`).
+- Усі ключі читаються лише на сервері (`process.env.*`) у Route Handlers; зразок — `.env.example` у корені.
+- Реальні значення зберігаються в `.env.local`, який **ніколи не читається агентами** (див. розділ обмежень вище).
+
+## UX-патерни і конвенції
+
+- **Мова інтерфейсу і коментарів LLM — українська**, 2-а особа («ти», «тобі»). Заголовки на сторінках і в кнопках — короткі, без жаргону.
+- **Кольори тільки через дизайн-токени Tailwind** (`bg-background`, `text-foreground`, `text-primary`, `text-muted-foreground`, `bg-card`, `border-border`, `bg-secondary`, `bg-muted`, `text-destructive` тощо). Не хардкодити hex-и в компонентах — додавати нові токени в `app/globals.css`.
+- **Закруглення:** `rounded-2xl` для карток, `rounded-xl` для дошки/великих контейнерів, `rounded-lg` для кнопок-радіо, `rounded-md` для дрібних кнопок.
+- **Кільця/тіні:** `ring-1 ring-border/50` + `shadow-sm` для карток у світлі; темні варіанти через `dark:bg-card/70 dark:ring-border/40`.
+- **ESLint-пастки в Next 16 / React 19:** забороняє `setState` синхронно всередині `useEffect`. Якщо потрібно — обгортати в `queueMicrotask(() => setState(...))`. Не використовувати `useRef` як стейт-сховище для важливих об'єктів (StockfishEngine) — використовувати `useState`.
+- **Remount замість in-place reset:** `ChessBoard` не має пропа `resetKey` — батько передає `key={boardKey}` і інкрементить його у `handleNewGame`.
+
+## Гайди для агентів
+
+- **Не вигадувати API Next.js** — у репозиторії є `AGENTS.md`/`CLAUDE.md` із вказівкою «This is NOT the Next.js you know», читати документацію в `node_modules/next/dist/docs/` перед нетривіальними змінами роутингу/конфігу.
+- **Не правити автогенерований код** у `public/stockfish/`. Він копіюється скриптом і виключений з ESLint.
+- **Не міняти контракт API `/api/coach`** без оновлення `useChessCoach` і `parseInput` у роуті одночасно.
+- Нові зосереджені правила (окремі задачі, домени) додавати окремими `.mdc` у `.cursor/rules/` з `globs` або `alwaysApply` за потреби.
