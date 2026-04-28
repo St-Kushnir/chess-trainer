@@ -9,9 +9,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Chessboard } from "react-chessboard";
-import type { Arrow, PieceDropHandlerArgs } from "react-chessboard";
+import {
+  Chessboard,
+  defaultPieces,
+  type Arrow,
+  type PieceDropHandlerArgs,
+  type PieceRenderObject,
+} from "react-chessboard";
 import type { ChessEngine, EngineMove } from "./engine";
+import { waitStockfishIdle } from "./engine";
 import { useChessSounds, type ChessSoundUrls } from "./useChessSounds";
 
 export type PlayerColor = "white" | "black";
@@ -79,8 +85,11 @@ type ChessBoardProps = {
   engineSkill?: number;
   /** Час на хід рушія в мс. */
   engineMovetimeMs?: number;
-  /** Глибина пошуку (взаємовиключно з `engineMovetimeMs`). */
+  /** Глибина пошуку (якщо задана — `movetime` не передається в `go`). */
   engineDepth?: number;
+  /** Обмеження сили через UCI_Elo (разом з `engineUciElo`). */
+  engineUseUciEloLimit?: boolean;
+  engineUciElo?: number;
   /** Колбек статусу партії після кожного ходу. */
   onStatusChange?: (info: StatusInfo) => void;
   /** Колбек із сирим аналізом рушія, коли бот робить хід. */
@@ -97,6 +106,14 @@ const HIGHLIGHT_COLORS = {
     "radial-gradient(circle, transparent 58%, rgba(239, 91, 80, 0.55) 60%, transparent 70%)",
 } as const;
 
+/** Затемнення клітинки короля під шахом (не мат). */
+const CHECK_KING_SQUARE_OVERLAY: CSSProperties = {
+  boxShadow: "inset 0 0 56px 16px hsl(var(--destructive) / 0.42)",
+};
+
+const KING_MATE_FILL = "hsl(var(--destructive))";
+const KING_STALEMATE_FILL = "hsl(var(--muted-foreground))";
+
 const COLOR_TO_SHORT: Record<PlayerColor, "w" | "b"> = {
   white: "w",
   black: "b",
@@ -104,6 +121,23 @@ const COLOR_TO_SHORT: Record<PlayerColor, "w" | "b"> = {
 
 function turnToColor(turn: "w" | "b"): PlayerColor {
   return turn === "w" ? "white" : "black";
+}
+
+const FILES = "abcdefgh" as const;
+
+/** Клітинка короля заданого кольору (w/b). */
+function kingSquareForColor(game: Chess, color: "w" | "b"): Square | null {
+  const board = game.board();
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const p = board[row]?.[col];
+      if (p?.type === "k" && p.color === color) {
+        const rank = 8 - row;
+        return `${FILES[col]}${rank}` as Square;
+      }
+    }
+  }
+  return null;
 }
 
 /** Чи можна «активувати» фігуру (клік / hover / початок drag) для підсвітки ходів. */
@@ -165,6 +199,8 @@ export function ChessBoard({
   engineSkill = 20,
   engineMovetimeMs = 1000,
   engineDepth,
+  engineUseUciEloLimit = false,
+  engineUciElo,
   onStatusChange,
   onEngineMove,
 }: ChessBoardProps) {
@@ -225,8 +261,41 @@ export function ChessBoard({
         boxShadow: "inset 0 0 0 3px rgba(45, 212, 191, 0.95)",
       };
     }
+    if (game.inCheck() && !game.isCheckmate()) {
+      const sq = kingSquareForColor(game, game.turn());
+      if (sq) {
+        styles[sq] = {
+          ...(styles[sq] ?? {}),
+          ...CHECK_KING_SQUARE_OVERLAY,
+        };
+      }
+    }
     return styles;
-  }, [lastMove, activeLegalSquare, legalMoves, previewSquares]);
+  }, [lastMove, activeLegalSquare, legalMoves, previewSquares, fen, game]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pieces = useMemo((): PieceRenderObject => {
+    if (game.isStalemate()) {
+      return {
+        ...defaultPieces,
+        wK: (props) => defaultPieces.wK({ ...props, fill: KING_STALEMATE_FILL }),
+        bK: (props) => defaultPieces.bK({ ...props, fill: KING_STALEMATE_FILL }),
+      };
+    }
+    if (game.isCheckmate()) {
+      const mated = game.turn();
+      if (mated === "w") {
+        return {
+          ...defaultPieces,
+          wK: (props) => defaultPieces.wK({ ...props, fill: KING_MATE_FILL }),
+        };
+      }
+      return {
+        ...defaultPieces,
+        bK: (props) => defaultPieces.bK({ ...props, fill: KING_MATE_FILL }),
+      };
+    }
+    return defaultPieces;
+  }, [fen, game]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const arrows = useMemo(() => {
     const hints = suggestionArrows ?? [];
@@ -400,14 +469,23 @@ export function ChessBoard({
       if (!cancelled) setBotThinking(true);
     });
 
-    opponent
-      .bestMove({
-        fen,
-        skill: engineSkill,
-        movetimeMs: engineDepth ? undefined : engineMovetimeMs,
-        depth: engineDepth,
-      })
-      .then((move) => {
+    void (async () => {
+      try {
+        await waitStockfishIdle(opponent);
+        if (cancelled) return;
+        const useUciLimit = engineUseUciEloLimit && engineUciElo != null;
+        const move = await opponent.bestMove({
+          fen,
+          skill: engineSkill,
+          movetimeMs:
+            engineDepth !== undefined && engineDepth !== null
+              ? undefined
+              : engineMovetimeMs,
+          depth: engineDepth,
+          ...(useUciLimit
+            ? { limitStrength: true as const, uciElo: engineUciElo }
+            : { limitStrength: false as const }),
+        });
         if (cancelled) return;
         const uci = move.bestmove;
         if (!uci || uci === "(none)") return;
@@ -423,13 +501,14 @@ export function ChessBoard({
         if (applied) {
           onEngineMove?.({ ...move, color: botColor });
         }
-      })
-      .catch((err) => {
-        console.error("Engine bestMove error", err);
-      })
-      .finally(() => {
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Engine bestMove error", err);
+        }
+      } finally {
         if (!cancelled) setBotThinking(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -443,6 +522,8 @@ export function ChessBoard({
     engineSkill,
     engineMovetimeMs,
     engineDepth,
+    engineUseUciEloLimit,
+    engineUciElo,
     applyMove,
     onEngineMove,
     game,
@@ -483,6 +564,7 @@ export function ChessBoard({
         <Chessboard
           options={{
             id: boardId,
+            pieces,
             position: fen,
             onPieceDrop: handlePieceDrop,
             onPieceDrag: handlePieceDrag,

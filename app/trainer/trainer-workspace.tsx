@@ -6,10 +6,10 @@ import { ChevronDown } from "lucide-react";
 import type { Arrow } from "react-chessboard";
 import {
   ChessBoard,
-  ENGINE_LEVELS,
+  DEFAULT_BOT_ELO,
+  engineLevelFromBotElo,
   useStockfishEngine,
-  type ChessEngine,
-  type EngineLevel,
+  waitStockfishIdle,
   type EngineMove,
   type EngineMoveInfo,
   type PlayerColor,
@@ -22,6 +22,10 @@ import {
   type CoachStatus,
 } from "@/components/coach";
 import type { CommentInput } from "@/lib/commentator";
+import { analyzeMoveQuality, type MoveQuality } from "@/lib/chess/moveQuality";
+import { CapturedPiecesHud } from "@/components/trainer/CapturedPiecesHud";
+import { EloLevelScrollPicker } from "@/components/trainer/EloLevelScrollPicker";
+import { MoveQualityPanel } from "@/components/trainer/MoveQualityPanel";
 
 const COLOR_OPTIONS: { id: PlayerColor; label: string; subtitle: string }[] = [
   { id: "white", label: "Білі", subtitle: "Ви ходите перші" },
@@ -195,20 +199,58 @@ function findSanAlongHintPv(
   return null;
 }
 
-/** Після `stop()` дочекатися `bestmove`, щоб не кидати «зайнятий» на новий `go`. */
-async function waitStockfishIdle(engine: ChessEngine, maxMs = 3000): Promise<void> {
-  const step = 8;
-  const maxSteps = Math.ceil(maxMs / step);
-  for (let i = 0; i < maxSteps; i++) {
-    if (!engine.isBusy()) return;
-    await new Promise((r) => setTimeout(r, step));
+/** Скільки мілісекунд показувати смугу з результатом на дошці. */
+const GAME_END_BANNER_MS = 5000;
+
+function isTerminalTrainerStatus(status: StatusInfo["status"]): boolean {
+  return (
+    status === "checkmate" ||
+    status === "stalemate" ||
+    status === "draw" ||
+    status === "gameOver"
+  );
+}
+
+/** Текст смуги після завершення партії (мат / пат / інша нічия). */
+function gameEndBannerCopy(
+  statusInfo: StatusInfo,
+  playerColor: PlayerColor,
+): { title: string; subtitle?: string } {
+  const s = statusInfo.status;
+  if (s === "checkmate") {
+    const winner = statusInfo.winner;
+    if (winner && winner !== "draw" && winner === playerColor) {
+      return { title: "Ви перемогли через мат" };
+    }
+    return { title: "Вам поставили мат" };
   }
+  if (s === "stalemate") {
+    const playerStalemated = statusInfo.turn === playerColor;
+    return {
+      title: playerStalemated
+        ? "Нічия, у вас не залишилось ходів"
+        : "Нічия, у суперника не залишилось ходів",
+    };
+  }
+  if (s === "draw") {
+    return {
+      title: "Нічия",
+      subtitle: "Партія завершилась нічиєю",
+    };
+  }
+  return { title: "Партія завершена" };
 }
 
 export function TrainerWorkspace() {
   const { engine, status: engineStatus } = useStockfishEngine();
+  const {
+    engine: analysisEngineRaw,
+    status: analysisEngineStatus,
+  } = useStockfishEngine();
   const [playerColor, setPlayerColor] = useState<PlayerColor>("white");
-  const [level, setLevel] = useState<EngineLevel>(ENGINE_LEVELS[2]);
+  /** Орієнтовний ELO бота (200…2400, крок 200) → пресет Stockfish. */
+  const [botElo, setBotElo] = useState(DEFAULT_BOT_ELO);
+  const level = useMemo(() => engineLevelFromBotElo(botElo), [botElo]);
   const [boardKey, setBoardKey] = useState(0);
   const [statusInfo, setStatusInfo] = useState<StatusInfo | null>(null);
   const [lastEngineMove, setLastEngineMove] = useState<EngineMoveInfo | null>(
@@ -222,6 +264,37 @@ export function TrainerWorkspace() {
   const [hintBusy, setHintBusy] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
   const [isPartyPanelOpen, setIsPartyPanelOpen] = useState(true);
+  const [isMoveQualityOpen, setIsMoveQualityOpen] = useState(false);
+  const [gameEndBanner, setGameEndBanner] = useState<{
+    title: string;
+    subtitle?: string;
+  } | null>(null);
+
+  const statusInfoRef = useRef<StatusInfo | null>(null);
+  const playerColorRef = useRef(playerColor);
+
+  useLayoutEffect(() => {
+    statusInfoRef.current = statusInfo;
+    playerColorRef.current = playerColor;
+  });
+
+  /** Другий Stockfish — лише аналіз якості ходів, без конфлікту з ходом бота. */
+  const [partyCpBalance, setPartyCpBalance] = useState(0);
+  const [lastPlayerAnalysis, setLastPlayerAnalysis] = useState<{
+    cpLost: number;
+    quality: MoveQuality;
+  } | null>(null);
+  const [lastBotAnalysis, setLastBotAnalysis] = useState<{
+    cpLost: number;
+    quality: MoveQuality;
+  } | null>(null);
+  const [moveAnalysisLoading, setMoveAnalysisLoading] = useState(false);
+  /** Окремі лічильники, щоб аналіз гравця і бота не скасовував один одного. */
+  const playerAnalysisGenRef = useRef(0);
+  const botAnalysisGenRef = useRef(0);
+  /** К-сть незавершених аналізів — для глобального індикатора «Аналіз…». */
+  const pendingAnalysisCountRef = useRef(0);
+  const lastAnalyzedPlyKeyRef = useRef<string | null>(null);
 
   const [trainerEnabled, setTrainerEnabled] = useState(false);
   /** Бірюзова стрілка + PV після ходу бота без увімкненого AI-тренера. */
@@ -261,6 +334,16 @@ export function TrainerWorkspace() {
     coach.reset();
     trainerStaleWhileLoadingStreakRef.current = 0;
     hintCommentaryGenRef.current += 1;
+    playerAnalysisGenRef.current += 1;
+    botAnalysisGenRef.current += 1;
+    pendingAnalysisCountRef.current = 0;
+    lastAnalyzedPlyKeyRef.current = null;
+    setPartyCpBalance(0);
+    setLastPlayerAnalysis(null);
+    setLastBotAnalysis(null);
+    setMoveAnalysisLoading(false);
+    setIsMoveQualityOpen(false);
+    setGameEndBanner(null);
     setBoardKey((k) => k + 1);
   }, [coach]);
 
@@ -272,15 +355,79 @@ export function TrainerWorkspace() {
     [handleNewGame],
   );
 
-  const handleLevelChange = useCallback(
-    (next: EngineLevel) => {
-      setLevel(next);
-      handleNewGame();
-    },
-    [handleNewGame],
-  );
+  const prevBotEloRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevBotEloRef.current;
+    if (prev === null) {
+      prevBotEloRef.current = botElo;
+      return;
+    }
+    if (prev === botElo) return;
+    prevBotEloRef.current = botElo;
+    const hadMoves = (statusInfoRef.current?.historySan?.length ?? 0) > 0;
+    if (hadMoves) {
+      queueMicrotask(() => handleNewGame());
+    }
+  }, [botElo, handleNewGame]);
 
   const opponent = engineStatus === "ready" ? engine : null;
+  const analysisEngine =
+    analysisEngineStatus === "ready" ? analysisEngineRaw : null;
+
+  // Аналіз якості останнього ходу (Stockfish, skill 20) — окремий worker.
+  useEffect(() => {
+    if (!analysisEngine || !statusInfo?.lastMove) return;
+
+    const hist = statusInfo.historySan;
+    if (hist.length === 0) return;
+
+    const lm = statusInfo.lastMove;
+    const plyKey = `${boardKey}:${hist.length}:${lm.uci}`;
+    if (lastAnalyzedPlyKeyRef.current === plyKey) return;
+    lastAnalyzedPlyKeyRef.current = plyKey;
+
+    const g = new Chess();
+    for (let i = 0; i < hist.length - 1; i++) {
+      g.move(hist[i]!);
+    }
+    const fenBefore = g.fen();
+    const uci = lm.uci;
+
+    const moverIsPlayer = lm.color === playerColor;
+    const genRef = moverIsPlayer ? playerAnalysisGenRef : botAnalysisGenRef;
+    const gen = ++genRef.current;
+    pendingAnalysisCountRef.current += 1;
+    queueMicrotask(() => setMoveAnalysisLoading(true));
+
+    void (async () => {
+      try {
+        await waitStockfishIdle(analysisEngine);
+        if (gen !== genRef.current) return;
+        const r = await analyzeMoveQuality(analysisEngine, fenBefore, uci, {
+          movetimeMs: 280,
+          depth: 15,
+        });
+        if (gen !== genRef.current) return;
+        const entry = { cpLost: r.cpLost, quality: r.quality };
+        if (moverIsPlayer) {
+          setLastPlayerAnalysis(entry);
+        } else {
+          setLastBotAnalysis(entry);
+        }
+        setPartyCpBalance((b) => b + (moverIsPlayer ? -r.cpLost : r.cpLost));
+      } catch {
+        // Не чистимо рядки при помилці — лишимо попередню оцінку.
+      } finally {
+        pendingAnalysisCountRef.current = Math.max(
+          0,
+          pendingAnalysisCountRef.current - 1,
+        );
+        if (pendingAnalysisCountRef.current === 0) {
+          setMoveAnalysisLoading(false);
+        }
+      }
+    })();
+  }, [analysisEngine, boardKey, playerColor, statusInfo]);
 
   const isGameOver = useMemo(() => {
     if (!statusInfo) return false;
@@ -291,6 +438,26 @@ export function TrainerWorkspace() {
       statusInfo.status === "gameOver"
     );
   }, [statusInfo]);
+
+  const gameEndScheduleKey = useMemo(() => {
+    if (!statusInfo) return null;
+    if (!isTerminalTrainerStatus(statusInfo.status)) return null;
+    return `${boardKey}:${statusInfo.status}:${statusInfo.fen}:${statusInfo.historySan.length}`;
+  }, [boardKey, statusInfo?.fen, statusInfo?.status, statusInfo?.historySan.length]); // eslint-disable-line react-hooks/exhaustive-deps -- chess state via fen/ply, not object identity
+
+  useEffect(() => {
+    if (!gameEndScheduleKey) {
+      queueMicrotask(() => setGameEndBanner(null));
+      return;
+    }
+    const si = statusInfoRef.current;
+    const pc = playerColorRef.current;
+    if (!si || !isTerminalTrainerStatus(si.status)) return;
+
+    queueMicrotask(() => setGameEndBanner(gameEndBannerCopy(si, pc)));
+    const id = window.setTimeout(() => setGameEndBanner(null), GAME_END_BANNER_MS);
+    return () => window.clearTimeout(id);
+  }, [gameEndScheduleKey]);
 
   // Прибираємо стрілку-хінт, як тільки гравець зіграв (вона вже неактуальна).
   useEffect(() => {
@@ -759,33 +926,80 @@ export function TrainerWorkspace() {
   return (
     <div className="mt-6 grid gap-4 md:mt-10 md:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)] lg:items-start">
       <div className="space-y-2 md:space-y-6">
-        {/* Mobile-only copy: тренер над дошкою; бокові відступи лише для картки. */}
-        <div className="px-1 md:px-0 lg:hidden">{coachPanel}</div>
+        {/* Mobile: тренер над дошкою; якість ходів одразу під тренером. */}
+        <div className="space-y-2 px-1 md:px-0 lg:hidden">
+          {coachPanel}
+          <MoveQualityPanel
+            lastPlayer={lastPlayerAnalysis}
+            lastBot={lastBotAnalysis}
+            partyCpBalance={partyCpBalance}
+            loading={moveAnalysisLoading}
+            expanded={isMoveQualityOpen}
+            onExpandedChange={setIsMoveQualityOpen}
+            instanceId="mq-mobile"
+          />
+        </div>
 
-        <ChessBoard
-          key={boardKey}
-          className="mx-auto w-full max-w-none md:max-w-[min(100%,560px)] lg:mx-0"
-          boardId="trainer-main"
+        <CapturedPiecesHud
+          fen={statusInfo?.fen ?? STARTING_FEN}
+          historySan={statusInfo?.historySan ?? []}
           playerColor={playerColor}
-          opponent={opponent}
-          engineSkill={level.skill}
-          engineMovetimeMs={level.movetimeMs}
-          engineDepth={level.depth}
-          suggestionArrows={hintArrows}
-          previewArrows={coachPreviewArrows}
-          previewSquares={coachPreviewSquares}
-          onStatusChange={setStatusInfo}
-          onEngineMove={setLastEngineMove}
-        />
+        >
+          <div className="relative mx-auto w-full max-w-none md:max-w-[min(100%,560px)] lg:mx-0">
+            <ChessBoard
+              key={boardKey}
+              className="w-full"
+              boardId="trainer-main"
+              playerColor={playerColor}
+              opponent={opponent}
+              engineSkill={level.skill}
+              engineMovetimeMs={level.movetimeMs}
+              engineDepth={level.depth}
+              engineUseUciEloLimit={level.useUciEloLimit}
+              engineUciElo={level.uciElo}
+              suggestionArrows={hintArrows}
+              previewArrows={coachPreviewArrows}
+              previewSquares={coachPreviewSquares}
+              onStatusChange={setStatusInfo}
+              onEngineMove={setLastEngineMove}
+            />
+            {gameEndBanner ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2 border-y border-white/15 bg-black/58 py-3 shadow-inner backdrop-blur-[3px] dark:bg-black/68"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="px-4 text-center text-sm font-semibold leading-snug text-white sm:text-base">
+                  {gameEndBanner.title}
+                </p>
+                {gameEndBanner.subtitle ? (
+                  <p className="mt-1 px-4 text-center text-xs font-medium leading-snug text-white/85 sm:text-sm">
+                    {gameEndBanner.subtitle}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </CapturedPiecesHud>
       </div>
 
       <aside className="space-y-6 px-1 md:px-0">
         <section className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40">
-          <header className="flex items-center justify-between">
-            <p className="text-sm font-semibold tracking-tight text-foreground">
-              Партія
-            </p>
-            <div className="flex items-center gap-2">
+          <header className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <p className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
+                Партія
+              </p>
+              {!isPartyPanelOpen ? (
+                <span
+                  className="min-w-0 truncate rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[11px] font-medium text-foreground ring-1 ring-primary/25"
+                  title={`${level.label} ${level.hint}`}
+                >
+                  <span className="text-muted-foreground"> {level.hint}</span>
+                </span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
                 onClick={handleNewGame}
@@ -860,30 +1074,7 @@ export function TrainerWorkspace() {
                 <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Рівень бота
                 </p>
-                <div role="radiogroup" className="space-y-1.5">
-                  {ENGINE_LEVELS.map((opt) => {
-                    const active = level.id === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => handleLevelChange(opt)}
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                          active
-                            ? "border-primary/60 bg-primary/10 text-foreground ring-1 ring-primary/30"
-                            : "border-border/80 bg-secondary text-foreground hover:bg-muted"
-                        }`}
-                      >
-                        <span className="font-medium">{opt.label}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {opt.hint}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <EloLevelScrollPicker value={botElo} onChange={setBotElo} />
               </div>
 
               <div className="mt-5">
@@ -921,6 +1112,19 @@ export function TrainerWorkspace() {
 
         {/* Desktop-only copy: тренер у правій колонці під «Партія». */}
         <div className="hidden lg:block">{coachPanel}</div>
+
+        {/* Desktop: якість ходів під AI-тренером у правій колонці. */}
+        <div className="hidden lg:block">
+          <MoveQualityPanel
+            lastPlayer={lastPlayerAnalysis}
+            lastBot={lastBotAnalysis}
+            partyCpBalance={partyCpBalance}
+            loading={moveAnalysisLoading}
+            expanded={isMoveQualityOpen}
+            onExpandedChange={setIsMoveQualityOpen}
+            instanceId="mq-desktop"
+          />
+        </div>
       </aside>
     </div>
   );

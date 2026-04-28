@@ -11,12 +11,18 @@ export type EngineMove = {
 
 export type SearchOptions = {
   fen: string;
-  /** Skill Level Stockfish 0..20 (за замовчуванням 20 — повна сила) */
+  /** Skill Level Stockfish 0..20 (за замовчуванням 20 — повна сила). Ігнорується, якщо `limitStrength` + `uciElo`. */
   skill?: number;
   /** Обмеження часу на хід у мс. */
   movetimeMs?: number;
   /** Обмеження глибини. */
   depth?: number;
+  /**
+   * Обмежити силу за UCI_Elo (типовий діапазон Stockfish 1320–3190).
+   * Якщо true і задано `uciElo`, опція Skill Level не застосовується.
+   */
+  limitStrength?: boolean;
+  uciElo?: number;
 };
 
 export interface ChessEngine {
@@ -29,6 +35,7 @@ export interface ChessEngine {
   destroy(): void;
 }
 
+/** Пресет сили бота для тренажера (ELO → рушій — див. `botElo.ts`). */
 export type EngineLevel = {
   id: number;
   label: string;
@@ -37,51 +44,11 @@ export type EngineLevel = {
   skill: number;
   depth?: number;
   movetimeMs: number;
+  /**
+   * true — `UCI_LimitStrength` + `uciElo` (зазвичу id ≥ 1320).
+   * false — лише Skill Level + movetime/depth.
+   */
+  useUciEloLimit: boolean;
+  /** Значення UCI_Elo (якщо `useUciEloLimit`). */
+  uciElo?: number;
 };
-
-/**
- * Готові пресети для UI: 5 рівнів від новачка до майстра.
- * Skill Level + час на хід регулюють силу і UX-затримку.
- */
-export const ENGINE_LEVELS: readonly EngineLevel[] = [
-  {
-    id: 1,
-    label: "Новачок",
-    hint: "≈ 800 ELO",
-    skill: 0,
-    depth: 5,
-    movetimeMs: 250,
-  },
-  {
-    id: 2,
-    label: "Аматор",
-    hint: "≈ 1200 ELO",
-    skill: 5,
-    depth: 8,
-    movetimeMs: 450,
-  },
-  {
-    id: 3,
-    label: "Клубний гравець",
-    hint: "≈ 1600 ELO",
-    skill: 10,
-    depth: 11,
-    movetimeMs: 700,
-  },
-  {
-    id: 4,
-    label: "Сильний",
-    hint: "≈ 2000 ELO",
-    skill: 15,
-    depth: 14,
-    movetimeMs: 1100,
-  },
-  {
-    id: 5,
-    label: "Майстер",
-    hint: "≈ 2400+ ELO",
-    skill: 20,
-    depth: 18,
-    movetimeMs: 1800,
-  },
-] as const;

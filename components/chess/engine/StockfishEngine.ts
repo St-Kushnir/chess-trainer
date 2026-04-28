@@ -60,8 +60,16 @@ export class StockfishEngine implements ChessEngine {
     this.busy = true;
     this.currentInfo = {};
 
-    const skill = clamp(opts.skill ?? 20, 0, 20);
-    await this.send(`setoption name Skill Level value ${skill}`);
+    if (opts.limitStrength === true && opts.uciElo != null) {
+      const elo = clamp(opts.uciElo, 1320, 3190);
+      await this.send(`setoption name UCI_LimitStrength value true`);
+      await this.send(`setoption name UCI_Elo value ${elo}`);
+    } else {
+      await this.send(`setoption name UCI_LimitStrength value false`);
+      const skill = clamp(opts.skill ?? 20, 0, 20);
+      await this.send(`setoption name Skill Level value ${skill}`);
+    }
+
     await this.send(`position fen ${opts.fen}`);
     await this.send("isready", "readyok");
 

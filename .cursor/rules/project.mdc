@@ -45,7 +45,7 @@ alwaysApply: true
 ### Тренажер (`app/trainer/trainer-workspace.tsx`)
 Центральний оркестратор. Містить:
 - Вибір сторони гравця (білі/чорні) — змінює орієнтацію дошки і хто починає.
-- Вибір рівня бота з 5 пресетів (`ENGINE_LEVELS`: Новачок 800 → Майстер 2400+).
+- Вибір орієнтовного ELO бота (200–2400, крок 200) у вертикальному скролі; мапінг на `skill` / `depth` / `movetime` — `components/chess/engine/botElo.ts` (`engineLevelFromBotElo`).
 - Кнопку «Нова партія» (форсує remount `ChessBoard` через `key={boardKey}`).
 - Стейт `statusInfo` (від `ChessBoard.onStatusChange`), `lastEngineMove` (від `onEngineMove`).
 - Підняте керування коучем через `useChessCoach()`.
@@ -63,7 +63,8 @@ alwaysApply: true
 - Орієнтація дошки і `allowDragging` залежать від `playerColor` та черги.
 
 ### Шаховий рушій (`components/chess/engine/`)
-- `types.ts` — `ChessEngine`, `EngineMove`, `SearchOptions`, `EngineLevel`, `ENGINE_LEVELS` (5 пресетів із `skill` 0–20, `depth`, `movetimeMs`).
+- `types.ts` — `ChessEngine`, `EngineMove`, `SearchOptions`, `EngineLevel` (тип пресета для UI/API).
+- `botElo.ts` — `BOT_ELO_*`, `enginePresetForBotElo`, `engineLevelFromBotElo`, інтерполяція якорів у `skill` 0–20, `depth`, `movetimeMs`.
 - `StockfishEngine.ts` — Web Worker-обгортка над `public/stockfish/stockfish.js` (lite-single ≈ 7МБ). UCI-протокол: `uci`/`uciok` → `ucinewgame` → `isready`/`readyok` → `setoption Skill Level` → `position fen` → `go movetime|depth`. Парсить `info` (cp, mate, pv) та `bestmove`. Має guard `busy`, `stop()`, `destroy()`.
 - `useStockfishEngine.ts` — React-хук: створює один інстанс на життєвий цикл компонента, через `useState` (а не `useRef`, щоб уникнути ESLint-варнінгу про доступ до refs під час рендеру), termінує Worker на unmount.
 

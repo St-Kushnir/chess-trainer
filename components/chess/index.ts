@@ -9,9 +9,17 @@ export type {
 export { useChessSounds } from "./useChessSounds";
 export type { ChessSound, ChessSoundUrls } from "./useChessSounds";
 export {
-  ENGINE_LEVELS,
+  BOT_ELO_MAX,
+  BOT_ELO_MIN,
+  BOT_ELO_OPTIONS,
+  BOT_ELO_STEP,
+  DEFAULT_BOT_ELO,
   StockfishEngine,
+  engineLevelFromBotElo,
+  enginePresetForBotElo,
+  snapBotElo,
   useStockfishEngine,
+  waitStockfishIdle,
   type ChessEngine,
   type EngineLevel,
   type EngineMove,
