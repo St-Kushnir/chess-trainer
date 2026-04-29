@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useMemo,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import { ChessBoard } from "@/components/chess/ChessBoard";
 import type { PlayerColor } from "@/components/chess";
 import {
   capturesForPlayer,
@@ -14,10 +22,40 @@ type CapturedPiecesHudProps = {
   historySan: string[];
   playerColor: PlayerColor;
   children: ReactNode;
+  /**
+   * На мобільному: ряд «моя здобич» між дошкою та кнопками історії (десктоп — як раніше під усім блоком).
+   */
+  mineAboveHistoryOnMobile?: boolean;
 };
 
 function formatLeadMagnitude(points: number): string {
   return `+${points}`;
+}
+
+function isChessBoardElement(
+  el: unknown,
+): el is ReactElement<{ betweenBoardAndNav?: ReactNode }> {
+  if (!isValidElement(el)) return false;
+  const type = el.type as { displayName?: string } | string | undefined;
+  if (el.type === ChessBoard) return true;
+  if (typeof type === "function" || typeof type === "object")
+    return (type as { displayName?: string })?.displayName === "ChessBoard";
+  return false;
+}
+
+/** Рекурсивно передає `betweenBoardAndNav` у перший вкладений `ChessBoard`. */
+function injectBetweenBoardAndNav(
+  node: ReactNode,
+  slot: ReactNode,
+): ReactNode {
+  if (!isValidElement(node)) return node;
+  if (isChessBoardElement(node)) {
+    return cloneElement(node, { betweenBoardAndNav: slot });
+  }
+  const ch = (node.props as { children?: ReactNode }).children;
+  if (ch === undefined || ch === null) return node;
+  const next = Children.map(ch, (c) => injectBetweenBoardAndNav(c, slot));
+  return cloneElement(node, {}, next);
 }
 
 export function CapturedPiecesHud({
@@ -25,6 +63,7 @@ export function CapturedPiecesHud({
   historySan,
   playerColor,
   children,
+  mineAboveHistoryOnMobile = false,
 }: CapturedPiecesHudProps) {
   const { theirsSorted, mineSorted, advantage, oppColor, myColor } =
     useMemo(() => {
@@ -42,11 +81,10 @@ export function CapturedPiecesHud({
 
   const strip = (
     title: string,
-    pieces: typeof theirsSorted,
+    pieces: typeof mineSorted,
     pieceColor: "w" | "b",
     aria: string,
     keyPrefix: string,
-    /** Показувати «+N оч.» лише якщо цей рядок — у сторони, що веде в матеріалі. */
     leadMagnitude: number | null,
     leadFor: "player" | "opponent" | null,
   ) => {
@@ -66,7 +104,7 @@ export function CapturedPiecesHud({
 
     return (
       <div
-        className="flex w-full max-w-full flex-wrap items-center gap-x-2 gap-y-0 px-0.5 py-0.5"
+        className="flex min-h-[2rem] w-full max-w-full flex-wrap items-center gap-x-2 gap-y-0 px-0.5 py-0.5 sm:min-h-[2.125rem]"
         title={title}
       >
         <span className="sr-only">{aria}</span>
@@ -97,6 +135,26 @@ export function CapturedPiecesHud({
   const oppLeadMag = oppLeads ? Math.abs(advantage) : null;
   const myLeadMag = iLead ? advantage : null;
 
+  const mineStrip = strip(
+    "Моя здобич — фігури, які ви забрали",
+    mineSorted,
+    oppColor,
+    "Моя здобич: фігури, які ви забрали",
+    "m",
+    myLeadMag,
+    iLead ? "player" : null,
+  );
+
+  const mineSlotMobile = (
+    <div className="mx-auto w-full max-w-[min(100%,560px)] md:hidden">
+      {mineStrip}
+    </div>
+  );
+
+  const layeredChildren = mineAboveHistoryOnMobile
+    ? injectBetweenBoardAndNav(children, mineSlotMobile)
+    : children;
+
   return (
     <div className="w-full max-w-full space-y-0.5 text-foreground">
       {strip(
@@ -108,15 +166,11 @@ export function CapturedPiecesHud({
         oppLeadMag,
         oppLeads ? "opponent" : null,
       )}
-      {children}
-      {strip(
-        "Моя здобич — фігури, які ви забрали",
-        mineSorted,
-        oppColor,
-        "Моя здобич: фігури, які ви забрали",
-        "m",
-        myLeadMag,
-        iLead ? "player" : null,
+      {layeredChildren}
+      {mineAboveHistoryOnMobile ? (
+        <div className="mt-0.5 hidden max-w-full md:block">{mineStrip}</div>
+      ) : (
+        mineStrip
       )}
     </div>
   );

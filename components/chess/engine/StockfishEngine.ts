@@ -73,10 +73,17 @@ export class StockfishEngine implements ChessEngine {
     await this.send(`position fen ${opts.fen}`);
     await this.send("isready", "readyok");
 
-    const goCmd =
-      typeof opts.depth === "number"
-        ? `go depth ${opts.depth}`
-        : `go movetime ${opts.movetimeMs ?? 1000}`;
+    // UCI дозволяє одночасно і `depth`, і `movetime` — повертається той ліміт,
+    // що настане раніше. Використовуємо це для швидких підказок з cap-ом
+    // глибини: на простих позиціях `bestmove` приходить ще до закінчення часу.
+    const parts: string[] = ["go"];
+    if (typeof opts.depth === "number") parts.push(`depth ${opts.depth}`);
+    if (typeof opts.movetimeMs === "number") {
+      parts.push(`movetime ${opts.movetimeMs}`);
+    } else if (typeof opts.depth !== "number") {
+      parts.push("movetime 1000");
+    }
+    const goCmd = parts.join(" ");
 
     return new Promise<EngineMove>((resolve) => {
       this.currentResolver = (move) => {

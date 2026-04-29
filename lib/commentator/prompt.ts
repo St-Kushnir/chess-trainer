@@ -2,15 +2,14 @@ import { Chess } from "chess.js";
 import type { CommentInput, CommentatorColor } from "./types";
 
 export const SYSTEM_PROMPT = `Ти — український шаховий тренер у застосунку Chess Trainer.
-Твій єдиний клієнт — конкретний УЧЕНЬ, який грає проти бота Stockfish.
-Завжди дивись на позицію очима учня й говори ВІД ДРУГОЇ ОСОБИ ("ти", "тобі", "у тебе"), не від третьої.
+Учень грає проти бота Stockfish; говори ВІД ДРУГОЇ ОСОБИ ("ти", "тобі", "у тебе"), не від третьої.
 
 Жорсткі правила:
-- Завжди українською, дружньо, без шаблонних вступів типу "Звичайно!" чи "Чудове питання".
-- Коли є оцінка Stockfish — це об'єктивна істина. Не сперечайся з нею, спирайся на неї.
-- Завжди використовуй лише надану шахову нотацію SAN (Кf3, Cxe5, O-O). НЕ використовуй UCI ("e2e4").
-- Не вигадуй ходи, яких немає в наданих SAN-списках і не суперечить FEN.
-- Жодних markdown-таблиць, жодних великих заголовків (#, ##). Дозволено: **жирний** для коротких підписів, "-" буллети.
+- Українською, дружньо, без вступів на кшталт "Звичайно!" чи "Чудове питання".
+- Оцінка Stockfish — об'єктивна істина: спирайся на неї, не сперечайся.
+- Лише SAN-нотація (Кf3, Cxe5, O-O); НЕ UCI ("e2e4"). Не вигадуй ходи, яких немає в наданих списках і не суперечить FEN.
+- Без markdown-таблиць та H1/H2. Дозволено: **жирний** для коротких підписів і "-" буллети.
+- Не обривай відповідь посеред речення/булета/блоку — доводь кожен початий блок до кінця; за потреби скорочуй попередні, але не лишай «висячих» обривів.
 
 ОБОВ’ЯЗКОВА РОЗМІТКА СТОРІН (для інтерфейсу застосунку):
 Після КОЖНОЇ окремої згадки SAN-ходу та після КОЖНОЇ окремої згадки клітинки (формат літера+цифра: d5, e4, f3) одразу додавай у дужках, про чию сторону йдеться (один із двох варіантів):
@@ -117,6 +116,34 @@ function movesToPgn(history: string[]): string {
   return out.join(" ");
 }
 
+/**
+ * Залишаємо лише останні `tail` півходів. Велика історія (>20 ходів) майже не
+ * допомагає LLM сформулювати поточний хід, але роздуває контекст і час до
+ * першого токена. Для hint-режиму вистачає 6 півходів, для коментаря — 12.
+ */
+function tailMovesToPgn(history: string[], tail: number): string {
+  if (history.length === 0) return "";
+  if (history.length <= tail) return movesToPgn(history);
+
+  const startPly = history.length - tail;
+  const out: string[] = [];
+  let i = startPly;
+  if (i % 2 === 1) {
+    out.push(`${Math.floor(i / 2) + 1}...${history[i]!}`);
+    i += 1;
+  }
+  for (; i < history.length; i += 2) {
+    const moveNo = i / 2 + 1;
+    const white = history[i];
+    const black = history[i + 1];
+    out.push(`${moveNo}. ${white}${black ? ` ${black}` : ""}`);
+  }
+  return `… ${out.join(" ")}`;
+}
+
+const HISTORY_TAIL_PLIES_HINT = 6;
+const HISTORY_TAIL_PLIES_COMMENT = 12;
+
 export function buildPrompt(input: CommentInput): string {
   const playerColor = input.playerColor;
   const playerColorUa = colorUa(playerColor);
@@ -155,7 +182,11 @@ export function buildPrompt(input: CommentInput): string {
     lines.push("Партія щойно почалася, ходів ще не було.");
   }
   if (input.pgnHistory.length > 0) {
-    lines.push(`Історія (SAN): ${movesToPgn(input.pgnHistory)}`);
+    const tail =
+      input.mode === "hint"
+        ? HISTORY_TAIL_PLIES_HINT
+        : HISTORY_TAIL_PLIES_COMMENT;
+    lines.push(`Історія (SAN): ${tailMovesToPgn(input.pgnHistory, tail)}`);
   }
   lines.push(`FEN: ${input.fen}`);
 
@@ -202,7 +233,7 @@ export function buildPrompt(input: CommentInput): string {
     lines.push("");
     lines.push("**Грай: <SAN-хід> (ти)**");
     lines.push(
-      "2–3 короткі речення українською: чому цей хід (загроза/розвиток/тиск/тактика) та яка приблизна відповідь суперника.",
+      "2–3 короткі речення українською: чому цей хід (загроза/розвиток/тиск/тактика) та яка приблизна відповідь суперника. Заверши останнє речення повністю (крапка в кінці).",
     );
     lines.push("");
     lines.push(
@@ -235,7 +266,9 @@ export function buildPrompt(input: CommentInput): string {
     lines.push(
       "У КОЖНОМУ блоці всюди додавай (ти)/(суперник) після згадок SAN і клітинок — учень має однозначно бачити сторону без здогадів.",
     );
-    lines.push("Загальний обсяг: 90–160 слів, не більше.");
+    lines.push(
+      "Орієнтовний обсяг загалом: 90–180 слів. Якщо бракує «місця» — скорочуй **Позиція** та **Твій план**, але всі чотири блоки з заголовками **...** мають залишитися повними й завершеними; блок **Грай зараз** не можна обривати.",
+    );
   }
 
   return lines.join("\n");

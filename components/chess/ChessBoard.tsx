@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   Chessboard,
@@ -96,6 +97,13 @@ type ChessBoardProps = {
   onStatusChange?: (info: StatusInfo) => void;
   /** Колбек із сирим аналізом рушія, коли бот робить хід. */
   onEngineMove?: (info: EngineMoveInfo) => void;
+  /**
+   * Коли гравець починає хід (вибір фігури, drag, ПКМ) або зіграв свій хід —
+   * зовнішній шар може прибрати стрілки-підказки / превʼю з тексту тренера.
+   */
+  onDismissBoardOverlays?: () => void;
+  /** Між рамкою дошки та кнопками перемотування (наприклад, «моя здобич» на мобільному). */
+  betweenBoardAndNav?: ReactNode;
 };
 
 const HIGHLIGHT_COLORS = {
@@ -210,6 +218,8 @@ export function ChessBoard({
   engineUciElo,
   onStatusChange,
   onEngineMove,
+  onDismissBoardOverlays,
+  betweenBoardAndNav,
 }: ChessBoardProps) {
   const game = useMemo(() => new Chess(), []);
   const [fen, setFen] = useState(() => game.fen());
@@ -414,12 +424,16 @@ export function ChessBoard({
           }),
         );
         setViewMoveCount(game.history().length);
+        const mover: PlayerColor = turnToColor(move.color);
+        if (!playerColor || mover === playerColor) {
+          onDismissBoardOverlays?.();
+        }
         return true;
       } catch {
         return false;
       }
     },
-    [game, playSound, onStatusChange, clearDragState],
+    [game, playSound, onStatusChange, clearDragState, playerColor, onDismissBoardOverlays],
   );
 
   const handlePieceDrop = useCallback(
@@ -431,6 +445,7 @@ export function ChessBoard({
       if (playerColor && !isPlayerTurn) return false;
       const from = sourceSquare as Square;
       const to = targetSquare as Square;
+      onDismissBoardOverlays?.();
       if (moveNeedsPromotionChoice(game, from, to)) {
         setPromotionPick({ from, to });
         return false;
@@ -445,6 +460,7 @@ export function ChessBoard({
       isViewingPast,
       playerColor,
       promotionPick,
+      onDismissBoardOverlays,
     ],
   );
 
@@ -483,11 +499,12 @@ export function ChessBoard({
       if (isSparePiece || !square) return;
       if (playerColor && !isPlayerTurn) return;
       if (!canActivatePiece(game, piece, playerColor, isPlayerTurn)) return;
+      onDismissBoardOverlays?.();
       setHoverSquare(null);
       isDraggingRef.current = true;
       setDragSourceSquare(square as Square);
     },
-    [game, isPlayerTurn, playerColor, isViewingPast],
+    [game, isPlayerTurn, playerColor, isViewingPast, onDismissBoardOverlays],
   );
 
   const handleSquareClick = useCallback(
@@ -509,6 +526,7 @@ export function ChessBoard({
       const sq = square as Square;
 
       if (selectedSquare && selectedSquare !== sq) {
+        onDismissBoardOverlays?.();
         if (moveNeedsPromotionChoice(game, selectedSquare, sq)) {
           setPromotionPick({ from: selectedSquare, to: sq });
           setSelectedSquare(null);
@@ -520,6 +538,7 @@ export function ChessBoard({
       }
 
       if (piece && canActivatePiece(game, piece, playerColor, isPlayerTurn)) {
+        onDismissBoardOverlays?.();
         setSelectedSquare(sq);
         return;
       }
@@ -533,13 +552,15 @@ export function ChessBoard({
       playerColor,
       promotionPick,
       selectedSquare,
+      onDismissBoardOverlays,
     ],
   );
 
   const handleSquareRightClick = useCallback(() => {
+    onDismissBoardOverlays?.();
     setSelectedSquare(null);
     setHoverSquare(null);
-  }, []);
+  }, [onDismissBoardOverlays]);
 
   const handleNewGame = useCallback(() => {
     opponent?.stop();
@@ -739,10 +760,11 @@ export function ChessBoard({
           }}
         />
       </div>
-      <div className="mx-auto mt-3 flex w-full max-w-[min(100%,560px)] items-stretch justify-between gap-3 px-1">
+      {betweenBoardAndNav ?? null}
+      <div className="mx-auto mt-3 flex w-full max-w-[min(100%,560px)] items-stretch justify-between gap-3 px-1 max-md:mt-2 max-md:gap-2">
         <button
           type="button"
-          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35"
+          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35 max-md:min-h-9 max-md:rounded-lg max-md:py-1"
           aria-label="Попередній хід"
           title="Попередній хід"
           disabled={viewMoveCount <= 0}
@@ -750,11 +772,11 @@ export function ChessBoard({
             setViewMoveCount((c) => Math.max(0, c - 1))
           }
         >
-          <ChevronLeft className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" strokeWidth={2.25} />
+          <ChevronLeft className="h-11 w-11 shrink-0 sm:h-12 sm:w-12 max-md:h-7 max-md:w-7" strokeWidth={2.25} />
         </button>
         <button
           type="button"
-          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35"
+          className="flex min-h-[52px] flex-1 items-center justify-center rounded-xl border border-border/80 bg-secondary py-2 text-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-35 max-md:min-h-9 max-md:rounded-lg max-md:py-1"
           aria-label="Наступний хід"
           title="Наступний хід"
           disabled={viewMoveCount >= historyFullLen}
@@ -762,9 +784,11 @@ export function ChessBoard({
             setViewMoveCount((c) => Math.min(historyFullLen, c + 1))
           }
         >
-          <ChevronRight className="h-11 w-11 shrink-0 sm:h-12 sm:w-12" strokeWidth={2.25} />
+          <ChevronRight className="h-11 w-11 shrink-0 sm:h-12 sm:w-12 max-md:h-7 max-md:w-7" strokeWidth={2.25} />
         </button>
       </div>
     </div>
   );
 }
+
+ChessBoard.displayName = "ChessBoard";

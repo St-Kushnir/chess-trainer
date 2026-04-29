@@ -75,11 +75,19 @@ export function useChessCoach(): UseChessCoachReturn {
           break;
         }
 
-        // Тримаємо невеликий хвіст у буфері — він може бути префіксом сентінела,
-        // який доїде наступним чанком. Щоб не показати "[COACH_E…" у UI,
-        // публікуємо тільки безпечну частину.
-        const safeLen = Math.max(0, buffer.length - (COACH_ERROR_TAG.length - 1));
-        setText(buffer.slice(0, safeLen));
+        // Притримуємо хвіст ТІЛЬКИ якщо він починається з префіксу сентінела
+        // (`\u001f`). У звичайному тексті цього байта не буває, тому в 99%
+        // випадків публікуємо весь буфер одразу й уникаємо мерехтіння в UI.
+        const sentinelHead = COACH_ERROR_TAG.charAt(0);
+        const lastSentinelStart = buffer.lastIndexOf(sentinelHead);
+        const looksLikePrefix =
+          lastSentinelStart >= 0 &&
+          buffer.length - lastSentinelStart < COACH_ERROR_TAG.length &&
+          COACH_ERROR_TAG.startsWith(buffer.slice(lastSentinelStart));
+        const visible = looksLikePrefix
+          ? buffer.slice(0, lastSentinelStart)
+          : buffer;
+        setText(visible);
       }
 
       if (!errored) {

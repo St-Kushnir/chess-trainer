@@ -202,6 +202,14 @@ function findSanAlongHintPv(
 /** Скільки мілісекунд показувати смугу з результатом на дошці. */
 const GAME_END_BANNER_MS = 5000;
 
+/**
+ * Скільки разів підряд новий хід бота може настати під час завантаження
+ * підказки до того, як AI-тренер сам себе вимикає (захист від «зависання» на
+ * повільних мережах). Низький ELO бота може ходити швидше за TTFT Gemini, тож
+ * поріг має бути терплячим.
+ */
+const TRAINER_STALE_LIMIT = 6;
+
 function isTerminalTrainerStatus(status: StatusInfo["status"]): boolean {
   return (
     status === "checkmate" ||
@@ -459,16 +467,6 @@ export function TrainerWorkspace() {
     return () => window.clearTimeout(id);
   }, [gameEndScheduleKey]);
 
-  // Прибираємо стрілку-хінт, як тільки гравець зіграв (вона вже неактуальна).
-  useEffect(() => {
-    if (!statusInfo?.lastMove) return;
-    if (statusInfo.lastMove.color !== playerColor) return;
-    queueMicrotask(() => {
-      setHintArrows([]);
-      setHintPvUci(null);
-    });
-  }, [statusInfo?.lastMove, playerColor]);
-
   const statusText = useMemo(() => {
     if (engineStatus === "loading") return "Завантажую Stockfish…";
     if (engineStatus === "error") return "Не вдалося завантажити рушій";
@@ -526,10 +524,14 @@ export function TrainerWorkspace() {
       setHintError(null);
       const context = buildContext();
       try {
+        // Швидкий хінт: спершу обмежуємось ~600мс, але дозволяємо рушію
+        // зупинитись раніше (depth 14 на простих позиціях). Це дає TTFT-економію
+        // ≈ 900мс перед стартом стріму від Gemini.
         const move = await opponent.bestMove({
           fen: context.fen,
           skill: 20,
-          movetimeMs: 1500,
+          movetimeMs: 600,
+          depth: 14,
         });
 
         const uci = move.bestmove;
@@ -566,7 +568,7 @@ export function TrainerWorkspace() {
 
     if (trainerEnabledRef.current && wasLoading) {
       trainerStaleWhileLoadingStreakRef.current += 1;
-      if (trainerStaleWhileLoadingStreakRef.current >= 3) {
+      if (trainerStaleWhileLoadingStreakRef.current >= TRAINER_STALE_LIMIT) {
         trainerStaleWhileLoadingStreakRef.current = 0;
         hintCommentaryGenRef.current += 1;
         setTrainerEnabled(false);
@@ -693,6 +695,27 @@ export function TrainerWorkspace() {
     setCoachPreviewArrows([]);
     setCoachPreviewSquares([]);
   }, []);
+
+  /** Підказка Stockfish + жовті превʼю з тексту тренера — при взаємодії з дошкою. */
+  const dismissBoardOverlays = useCallback(() => {
+    setHintArrows([]);
+    setHintPvUci(null);
+    setCoachPreviewArrows([]);
+    setCoachPreviewSquares([]);
+  }, []);
+
+  // Прибираємо стрілку-хінт і превʼю тренера, як тільки гравець зіграв.
+  useEffect(() => {
+    if (!statusInfo?.lastMove) return;
+    if (statusInfo.lastMove.color !== playerColor) return;
+    queueMicrotask(() => dismissBoardOverlays());
+  }, [
+    dismissBoardOverlays,
+    playerColor,
+    statusInfo?.historySan?.length,
+    statusInfo?.lastMove,
+    statusInfo?.lastMove?.uci,
+  ]);
 
   /**
    * Намагаємось зіграти запропонований хід гравця (з `hintArrows[0]`) на копії
@@ -944,6 +967,7 @@ export function TrainerWorkspace() {
           fen={statusInfo?.fen ?? STARTING_FEN}
           historySan={statusInfo?.historySan ?? []}
           playerColor={playerColor}
+          mineAboveHistoryOnMobile
         >
           <div className="relative mx-auto w-full max-w-none md:max-w-[min(100%,560px)] lg:mx-0">
             <ChessBoard
@@ -962,6 +986,7 @@ export function TrainerWorkspace() {
               previewSquares={coachPreviewSquares}
               onStatusChange={setStatusInfo}
               onEngineMove={setLastEngineMove}
+              onDismissBoardOverlays={dismissBoardOverlays}
             />
             {gameEndBanner ? (
               <div

@@ -232,11 +232,11 @@ export function CoachPanel({
 
       {/*
         На md+ висота за контентом з max-height. На мобільних при увімкненому
-        тренері — фіксована «ячейка» (dvh), текст дрібніший і лише всередині
-        неї прокручується, щоб дошка під карткою не стрибала.
+        тренері — фіксована «ячейка» у rem (без dvh: динамічний vh/dvh на
+        телефонах перераховується й зсуває дошку під час оновлень стейту).
       */}
       {enabled ? (
-        <div className="mt-4 min-w-0 w-full max-md:flex max-md:min-h-[min(16dvh,5rem)] max-md:max-h-[min(16dvh,5rem)] max-md:flex-col md:block">
+        <div className="mt-4 min-w-0 w-full max-md:flex max-md:h-[5.25rem] max-md:flex-col md:block">
           <div
             className="relative min-h-0 min-w-0 max-w-full max-md:flex-1 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pr-1 max-md:leading-snug max-md:[font-size:clamp(0.62rem,calc(0.52rem+1.35vmin),0.8125rem)] md:min-h-11 md:max-h-[min(75vh,24rem)] md:overflow-y-auto md:pr-1 md:text-sm md:leading-relaxed text-foreground/90"
             onMouseLeave={onClearPreview}

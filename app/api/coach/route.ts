@@ -12,6 +12,13 @@ export const dynamic = "force-dynamic";
  */
 const COACH_ERROR_TAG = "\u001f[COACH_ERROR]\u001f";
 
+/** Лише `UNAVAILABLE`/503 ретраїмо — це короткочасні збої сервісу Gemini. */
+const RETRIABLE_HTTP_CODES = new Set<number>([503]);
+const RETRIABLE_STATUSES = new Set<string>(["UNAVAILABLE"]);
+const MAX_STREAM_ATTEMPTS = 2;
+const RETRY_BASE_DELAY_MS = 350;
+const RETRY_JITTER_MS = 250;
+
 type ParsedGeminiError = {
   code?: number;
   status?: string;
@@ -62,6 +69,15 @@ function extractGeminiError(raw: string): ParsedGeminiError | null {
     status: typeof inner.status === "string" ? inner.status : undefined,
     message: typeof inner.message === "string" ? inner.message : undefined,
   };
+}
+
+function isRetriableError(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  const info = extractGeminiError(raw);
+  if (!info) return false;
+  if (info.code !== undefined && RETRIABLE_HTTP_CODES.has(info.code)) return true;
+  if (info.status && RETRIABLE_STATUSES.has(info.status)) return true;
+  return false;
 }
 
 function friendlyCoachError(err: unknown): string {
@@ -161,6 +177,107 @@ function parseInput(payload: unknown): CommentInput | null {
   return input;
 }
 
+type CommentatorConfig = {
+  apiKey: string;
+  model: string | undefined;
+  temperature: number | undefined;
+  maxTokensComment: number | undefined;
+  maxTokensHint: number | undefined;
+  thinkingBudget: number | undefined;
+};
+
+function readCommentatorConfig(apiKey: string): CommentatorConfig {
+  const model = process.env.GEMINI_MODEL?.trim() || undefined;
+  const temperatureRaw = Number(process.env.GEMINI_TEMPERATURE);
+  const maxCommentRaw = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS_COMMENT);
+  const maxHintRaw = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS_HINT);
+  // Зворотна сумісність: загальний `GEMINI_MAX_OUTPUT_TOKENS` бере для коментаря.
+  const maxLegacyRaw = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS);
+  const thinkingRaw = Number(process.env.GEMINI_THINKING_BUDGET);
+
+  return {
+    apiKey,
+    model,
+    temperature: Number.isFinite(temperatureRaw) ? temperatureRaw : undefined,
+    maxTokensComment: Number.isFinite(maxCommentRaw)
+      ? maxCommentRaw
+      : Number.isFinite(maxLegacyRaw)
+        ? maxLegacyRaw
+        : undefined,
+    maxTokensHint: Number.isFinite(maxHintRaw) ? maxHintRaw : undefined,
+    thinkingBudget: Number.isFinite(thinkingRaw) ? thinkingRaw : undefined,
+  };
+}
+
+function configKey(cfg: CommentatorConfig): string {
+  return [
+    cfg.apiKey,
+    cfg.model ?? "",
+    cfg.temperature ?? "",
+    cfg.maxTokensComment ?? "",
+    cfg.maxTokensHint ?? "",
+    cfg.thinkingBudget ?? "",
+  ].join("|");
+}
+
+/**
+ * Кешуємо інстанс коментатора між запитами (Node.js runtime тримає модулі
+ * живими в межах інстансу). Це позбавляє нас повторної ініціалізації клієнта
+ * та підтягує переваги implicit prompt caching на стороні Gemini.
+ */
+let cachedCommentator: { commentator: GeminiCommentator; key: string } | null =
+  null;
+
+function getCommentator(cfg: CommentatorConfig): GeminiCommentator {
+  const key = configKey(cfg);
+  if (cachedCommentator && cachedCommentator.key === key) {
+    return cachedCommentator.commentator;
+  }
+  const commentator = new GeminiCommentator({
+    apiKey: cfg.apiKey,
+    model: cfg.model,
+    temperature: cfg.temperature,
+    maxOutputTokensForComment: cfg.maxTokensComment,
+    maxOutputTokensForHint: cfg.maxTokensHint,
+    thinkingBudget: cfg.thinkingBudget,
+  });
+  cachedCommentator = { commentator, key };
+  return commentator;
+}
+
+async function streamWithRetry(
+  commentator: GeminiCommentator,
+  input: CommentInput,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  signal: AbortSignal,
+): Promise<void> {
+  let attempt = 0;
+  // Якщо помилка приходить ДО першого корисного чанка — пробуємо ще раз;
+  // якщо вже почали стрімити текст — ретраю не робимо, щоб не дублювати UI.
+  while (true) {
+    attempt += 1;
+    let firstChunkSent = false;
+    try {
+      for await (const chunk of commentator.comment(input)) {
+        if (signal.aborted) return;
+        if (chunk) {
+          controller.enqueue(encoder.encode(chunk));
+          firstChunkSent = true;
+        }
+      }
+      return;
+    } catch (err) {
+      if (signal.aborted) return;
+      if (firstChunkSent) throw err;
+      if (attempt >= MAX_STREAM_ATTEMPTS) throw err;
+      if (!isRetriableError(err)) throw err;
+      const delay = RETRY_BASE_DELAY_MS + Math.random() * RETRY_JITTER_MS;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -188,26 +305,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const model = process.env.GEMINI_MODEL?.trim() || undefined;
-  const temperatureRaw = Number(process.env.GEMINI_TEMPERATURE);
-  const maxTokensRaw = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS);
-
-  const commentator = new GeminiCommentator({
-    apiKey,
-    model,
-    temperature: Number.isFinite(temperatureRaw) ? temperatureRaw : undefined,
-    maxOutputTokens: Number.isFinite(maxTokensRaw) ? maxTokensRaw : undefined,
-  });
+  const commentator = getCommentator(readCommentatorConfig(apiKey));
   const encoder = new TextEncoder();
+  const signal = req.signal;
 
-  const stream = new ReadableStream({
+  const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const chunk of commentator.comment(input)) {
-          if (chunk) controller.enqueue(encoder.encode(chunk));
-        }
+        await streamWithRetry(commentator, input, controller, encoder, signal);
         controller.close();
       } catch (err) {
+        if (signal.aborted) {
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
+          return;
+        }
         const msg = friendlyCoachError(err);
         controller.enqueue(encoder.encode(`${COACH_ERROR_TAG}${msg}`));
         controller.close();
