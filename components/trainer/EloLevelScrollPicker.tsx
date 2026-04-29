@@ -112,6 +112,7 @@ export function EloLevelScrollPicker({
         aria-activedescendant={`bot-elo-option-${value}`}
         className="max-h-[220px] snap-y snap-mandatory overflow-y-auto scroll-py-3 scroll-smooth py-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border"
       >
+        
         {BOT_ELO_OPTIONS.map((elo) => {
           const active = value === elo;
           return (
