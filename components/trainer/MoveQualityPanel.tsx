@@ -209,6 +209,12 @@ export function MoveQualityPanel({
       className="rounded-2xl border border-border/80 bg-card/90 p-5 shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40"
       aria-label="Якість ходів"
     >
+      {/*
+        ВАЖЛИВО: `truncate` на назві та підпису + короткий текст балансу.
+        Інакше довжина балансу (`+5` → `+185`) міняла кількість рядків
+        у шапці й дошка під панеллю стрибала вниз/вверх на мобільних
+        після кожного ходу (бот робить хід → змінюється `partyCpBalance`).
+      */}
       <header
         className={`flex items-start justify-between gap-2 ${
           !expanded ? "cursor-pointer rounded-lg outline-offset-2 hover:bg-muted/40" : ""
@@ -218,16 +224,16 @@ export function MoveQualityPanel({
         }}
       >
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold tracking-tight text-foreground">
+          <p className="truncate text-sm font-semibold tracking-tight text-foreground">
             Якість ходів за Stockfish
           </p>
           {!expanded ? (
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 truncate text-xs text-muted-foreground">
               Баланс:{" "}
               <span className={`font-mono font-semibold tabular-nums ${balanceColor}`}>
                 {balanceStr}
               </span>{" "}
-              сп — натисни, щоб розгорнути.
+              сп
             </p>
           ) : null}
         </div>
