@@ -656,7 +656,13 @@ export function ChessBoard({
         «Бот думає» / «Нова партія» — поверх дошки (absolute), без окремої
         смуги з фіксованою висотою, щоб не залишати порожній зазор на тренажері.
       */}
-      <div className="relative overflow-hidden rounded-xl border border-border/80 bg-card shadow-md ring-1 ring-border/40 touch-none">
+      {/*
+        `aspect-square` фіксує висоту = ширині ще ДО того, як `react-chessboard`
+        всередині відмірить себе через ResizeObserver. Без цього у момент
+        ремаунту/зміни ширини контейнера дошка на мить мала меншу висоту й
+        видавала «стрибки фігур» / зміщення (особливо помітно на мобільних).
+      */}
+      <div className="relative aspect-square overflow-hidden rounded-xl border border-border/80 bg-card shadow-md ring-1 ring-border/40 touch-none">
         {promotionPick ? (
           <div
             className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/45 px-4 py-6 backdrop-blur-[2px]"

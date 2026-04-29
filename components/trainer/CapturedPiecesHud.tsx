@@ -104,12 +104,15 @@ export function CapturedPiecesHud({
 
     return (
       <div
-        className="flex min-h-[2rem] w-full max-w-full flex-wrap items-center gap-x-2 gap-y-0 px-0.5 py-0.5 sm:min-h-[2.125rem]"
+        // ВАЖЛИВО: фіксована висота + `flex-nowrap` + `overflow-hidden`.
+        // Без цього зростання списку забраних фігур іноді переносило рядок
+        // (`flex-wrap`) і смуга додавала +2rem → дошка стрибала вниз.
+        className="flex h-8 w-full max-w-full flex-nowrap items-center gap-x-2 overflow-hidden px-0.5 py-0.5 sm:h-9"
         title={title}
       >
         <span className="sr-only">{aria}</span>
         <div
-          className="-space-x-1 flex min-w-0 shrink items-center leading-none"
+          className="-space-x-1 flex min-w-0 flex-1 items-center leading-none"
           aria-hidden
         >
           {pieces.length === 0 ? (
@@ -118,7 +121,7 @@ export function CapturedPiecesHud({
             pieces.map((pt, i) => (
               <span
                 key={`${keyPrefix}-${i}-${pt}`}
-                className="inline-flex select-none drop-shadow-sm"
+                className="inline-flex shrink-0 select-none drop-shadow-sm"
               >
                 <CapturedPieceIcon pieceType={pt} color={pieceColor} />
               </span>

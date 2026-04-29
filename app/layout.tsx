@@ -34,6 +34,19 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/*
+          Прогрів TLS-з'єднання до Gemini API: `preconnect` робить DNS+TCP+TLS
+          ще до першого запиту тренера, що економить 50–250 мс на TTFT.
+          Сам запит уходить тільки коли користувач увімкне AI-тренер.
+        */}
+        <link
+          rel="preconnect"
+          href="https://generativelanguage.googleapis.com"
+          crossOrigin="anonymous"
+        />
+        <link rel="dns-prefetch" href="https://generativelanguage.googleapis.com" />
+      </head>
       <body className="page-mesh flex min-h-full flex-col font-sans">
         <ThemeProvider>
           <Header />

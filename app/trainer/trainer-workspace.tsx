@@ -45,6 +45,29 @@ function sanEquivalent(a: string, b: string): boolean {
   return stripSanDecor(a) === stripSanDecor(b);
 }
 
+/**
+ * Перетворити UCI-нотацію (`e2e4`, `e7e8q`) у SAN відносно поточного FEN.
+ * Повертає `null`, якщо хід не валідний для позиції (захист від гонок між
+ * хідом бота й приходом bestmove від Stockfish-хінта).
+ */
+function uciToSan(fen: string, uci: string): string | null {
+  if (!uci || uci.length < 4) return null;
+  try {
+    const game = new Chess(fen);
+    const move = game.move({
+      from: uci.slice(0, 2) as Square,
+      to: uci.slice(2, 4) as Square,
+      promotion:
+        uci.length > 4
+          ? (uci.slice(4, 5) as "q" | "r" | "b" | "n")
+          : "q",
+    });
+    return move?.san ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function applyUciMove(game: Chess, uci: string): boolean {
   const u = uci.trim().toLowerCase();
   if (u.length < 4) return false;
@@ -267,6 +290,12 @@ export function TrainerWorkspace() {
   const [hintArrows, setHintArrows] = useState<Arrow[]>([]);
   /** PV української підказки Stockfish (UCI), для превʼю SAN у варіанті після ходу учня. */
   const [hintPvUci, setHintPvUci] = useState<string[] | null>(null);
+  /**
+   * SAN-нотація рекомендованого ходу від Stockfish — щоб у `CoachPanel`
+   * відразу показати «Грай: Nf3» ще ДО того, як приїде перший токен Gemini.
+   * Скидається разом із `hintArrows`/`hintPvUci`.
+   */
+  const [hintSan, setHintSan] = useState<string | null>(null);
   const [coachPreviewArrows, setCoachPreviewArrows] = useState<Arrow[]>([]);
   const [coachPreviewSquares, setCoachPreviewSquares] = useState<Square[]>([]);
   const [hintBusy, setHintBusy] = useState(false);
@@ -336,6 +365,7 @@ export function TrainerWorkspace() {
     setLastEngineMove(null);
     setHintArrows([]);
     setHintPvUci(null);
+    setHintSan(null);
     setCoachPreviewArrows([]);
     setCoachPreviewSquares([]);
     setHintError(null);
@@ -545,6 +575,7 @@ export function TrainerWorkspace() {
           { startSquare: from, endSquare: to, color: HINT_ARROW_COLOR },
         ]);
         setHintPvUci(move.pv ?? null);
+        setHintSan(uciToSan(context.fen, uci));
 
         return { ok: true, move };
       } catch (err) {
@@ -680,6 +711,7 @@ export function TrainerWorkspace() {
         if (!hintArrowEnabledRef.current) {
           setHintArrows([]);
           setHintPvUci(null);
+          setHintSan(null);
         }
       }
       return next;
@@ -700,6 +732,7 @@ export function TrainerWorkspace() {
   const dismissBoardOverlays = useCallback(() => {
     setHintArrows([]);
     setHintPvUci(null);
+    setHintSan(null);
     setCoachPreviewArrows([]);
     setCoachPreviewSquares([]);
   }, []);
@@ -940,6 +973,7 @@ export function TrainerWorkspace() {
       onToggle={handleToggleTrainer}
       onReset={handleCoachReset}
       busy={hintBusy}
+      quickHintSan={hintSan}
       onPreviewSquare={handleCoachPreviewSquare}
       onPreviewMove={handleCoachPreviewMove}
       onClearPreview={handleCoachClearPreview}
@@ -1128,6 +1162,7 @@ export function TrainerWorkspace() {
                       if (!on) {
                         setHintArrows([]);
                         setHintPvUci(null);
+                        setHintSan(null);
                         setHintError(null);
                       }
                     }}

@@ -14,6 +14,12 @@ type CoachPanelProps = {
   onReset: () => void;
   /** Іде запит до Stockfish + LLM (поза самим стрімом). */
   busy?: boolean;
+  /**
+   * Швидкий «попередній» хід від Stockfish, щоб користувач бачив рекомендацію
+   * ще до приходу першого токена від Gemini. SAN, який буде показано вгорі
+   * шапки — наприклад «Грай: Nf3».
+   */
+  quickHintSan?: string | null;
   /** `textBeforeToken` — префікс відповіді до початку токена (для зняття неоднозначності превʼю). */
   onPreviewSquare?: (
     square: string,
@@ -128,6 +134,7 @@ export function CoachPanel({
   onToggle,
   onReset,
   busy = false,
+  quickHintSan = null,
   onPreviewSquare,
   onPreviewMove,
   onClearPreview,
@@ -135,6 +142,13 @@ export function CoachPanel({
 }: CoachPanelProps) {
   const isStreaming = status === "streaming" || busy;
   const showIdleHint = enabled && !isStreaming && !text && !error;
+  /**
+   * Скелетон, поки немає першого токена. Показуємо ТІЛЬКИ коли тренер
+   * увімкнений, ще немає тексту й немає швидкої плашки — інакше плашка
+   * «Грай: …» вже виконує роль активного стану.
+   */
+  const showStreamingSkeleton =
+    enabled && isStreaming && !text && !error && !quickHintSan;
 
   const sectionBorderClass = useMemo(() => {
     if (!enabled) {
@@ -202,49 +216,89 @@ export function CoachPanel({
 
   return (
     <section
-      className={`relative min-w-0 max-w-full rounded-2xl bg-card/90 p-4 sm:p-5 shadow-sm dark:bg-card/70 ${sectionBorderClass} ${className}`}
+      className={`relative min-w-0 max-w-full rounded-2xl bg-card/90 p-3 shadow-sm sm:p-5 dark:bg-card/70 ${sectionBorderClass} ${className}`}
       aria-label="AI-тренер"
       aria-busy={isStreaming}
     >
-      <div className="absolute right-4 top-4 z-10 sm:right-5 sm:top-5">
+      <div className="absolute right-3 top-1 z-10 sm:right-5 sm:top-5">
         <button
           type="button"
           onClick={onToggle}
           aria-pressed={enabled}
-          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+          aria-label={enabled ? "Вимкнути тренера" : "Увімкнути тренера"}
+          className={`rounded-md px-2 py-1 text-[10px] font-semibold transition-colors sm:px-3 sm:py-1.5 sm:text-xs ${
             enabled
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
               : "border border-border/80 bg-secondary text-foreground hover:bg-muted"
           }`}
         >
-          {enabled ? "Вимкнути тренера" : "Увімкнути тренера"}
+          <span className="sm:hidden">{enabled ? "Вимкнути" : "Увімкнути"}</span>
+          <span className="hidden sm:inline">
+            {enabled ? "Вимкнути тренера" : "Увімкнути тренера"}
+          </span>
         </button>
       </div>
 
-      <header className="min-w-0 max-w-[calc(100%-10.5rem)] sm:max-w-[calc(100%-11.5rem)]">
-        <p className="text-sm font-semibold tracking-tight text-foreground">
+      <header className="min-w-0 max-w-[calc(100%-5.75rem)] sm:max-w-[calc(100%-11.5rem)]">
+        <p className="text-xs font-semibold leading-tight tracking-tight text-foreground sm:text-sm">
           AI-тренер
         </p>
-        <p className="mt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+        <p className="mt-0 hidden text-[10px] uppercase tracking-wider text-muted-foreground sm:mt-0.5 sm:block sm:text-[11px]">
           Gemini · Stockfish
         </p>
       </header>
 
       {/*
-        На md+ висота за контентом з max-height. На мобільних при увімкненому
-        тренері — фіксована «ячейка» у rem (без dvh: динамічний vh/dvh на
-        телефонах перераховується й зсуває дошку під час оновлень стейту).
+        Мобільний: фіксована висота блоку підказка + текст (`~22svh`, макс. 8.25rem),
+        щоб дошка не стрибала; довгий текст — скрол усередині.
       */}
       {enabled ? (
-        <div className="mt-4 min-w-0 w-full max-md:flex max-md:h-[5.25rem] max-md:flex-col md:block">
+        <div className="mt-2 flex w-full min-w-0 flex-col max-md:h-[min(20svh,6.50rem)] md:mt-4 md:h-auto">
+          {quickHintSan && !error ? (
+            <button
+              type="button"
+              onClick={() => onPreviewMove?.(quickHintSan, "player")}
+              onMouseEnter={() => onPreviewMove?.(quickHintSan, "player")}
+              onMouseLeave={onClearPreview}
+              onFocus={() => onPreviewMove?.(quickHintSan, "player")}
+              onBlur={onClearPreview}
+              className="group mb-2 inline-flex max-w-full shrink-0 items-center gap-1 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-left text-[11px] font-semibold text-foreground ring-1 ring-primary/25 transition-colors hover:bg-primary/15 sm:mb-2 sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-1 sm:text-xs"
+              aria-label={`Рекомендований хід: ${quickHintSan}`}
+            >
+              <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground group-hover:text-foreground sm:text-[10px] sm:tracking-wider">
+                Грай
+              </span>
+              <span className="font-mono text-xs text-primary sm:text-sm">
+                {quickHintSan}
+              </span>
+              {isStreaming ? (
+                <span
+                  className="ml-0.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary/70 sm:h-2 sm:w-2"
+                  aria-hidden
+                />
+              ) : null}
+            </button>
+          ) : null}
+
           <div
-            className="relative min-h-0 min-w-0 max-w-full max-md:flex-1 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pr-1 max-md:leading-snug max-md:[font-size:clamp(0.62rem,calc(0.52rem+1.35vmin),0.8125rem)] md:min-h-11 md:max-h-[min(75vh,24rem)] md:overflow-y-auto md:pr-1 md:text-sm md:leading-relaxed text-foreground/90"
+            className="relative min-w-0 max-w-full max-md:min-h-0 max-md:flex-1 max-md:overflow-y-auto max-md:overscroll-y-contain max-md:pr-0.5 max-md:leading-snug max-md:text-[clamp(0.68rem,calc(0.58rem+1.2vmin),0.8125rem)] md:min-h-11 md:max-h-[min(75vh,24rem)] md:flex-none md:overflow-y-auto md:pr-1 md:text-sm md:leading-relaxed text-foreground/90"
             onMouseLeave={onClearPreview}
           >
               {showIdleHint ? (
                 <p className="text-muted-foreground">
                   Як тільки бот зіграє — підкажу твій найкращий хід.
                 </p>
+              ) : null}
+
+              {showStreamingSkeleton ? (
+                <div
+                  className="space-y-1.5"
+                  aria-hidden
+                >
+                  <div className="h-2.5 w-11/12 animate-pulse rounded bg-muted/60 dark:bg-muted/35" />
+                  <div className="h-2.5 w-9/12 animate-pulse rounded bg-muted/60 dark:bg-muted/35" />
+                  <div className="h-2.5 w-7/12 animate-pulse rounded bg-muted/60 dark:bg-muted/35" />
+                </div>
               ) : null}
 
               {error ? (
