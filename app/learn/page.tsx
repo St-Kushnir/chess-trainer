@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Навчання",
@@ -26,12 +27,19 @@ export default function LearnPage() {
       <div className="mt-10 grid max-w-4xl gap-5 sm:grid-cols-2">
         <section className="rounded-2xl border border-border/80 bg-card/90 p-6 shadow-sm ring-1 ring-border/50 dark:bg-card/70 dark:ring-border/40">
           <h2 className="text-lg font-semibold tracking-tight text-foreground">
-            Каталог уроків
+            Дебюти
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Підбірка тем, пояснень і практичних завдань. Контент цього блоку
-            буде додано на наступних ітераціях.
+            Короткі відео про дебютні пастки та ідеї за білих і чорних — з
+            описами українською; перегляд прямо на сторінці.
           </p>
+          <Link
+            href="/learn/debuts"
+            className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+          >
+            Перейти до дебютів
+            <span aria-hidden>→</span>
+          </Link>
         </section>
 
         <section
